@@ -1,0 +1,205 @@
+---
+title: "Biomarker 3-panel boxplot by Reporting Area"
+output:
+  html_document:
+    toc: false
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center"
+)
+
+library(tidyverse)
+library(janitor)
+library(patchwork)
+```
+
+## Load data
+
+```{r load-data}
+# Update this path if your file lives somewhere else in the repo.
+data_path <- file.path("..", "data", "plotting", "biomarker_df_with_identifiers_values.csv")
+
+# Fallbacks for knitting from different working directories.
+if (!file.exists(data_path)) data_path <- file.path("data", "plotting", "biomarker_df_with_identifiers_values.csv")
+if (!file.exists(data_path)) data_path <- "biomarker_df_with_identifiers_values.csv"
+
+sites <- readr::read_csv(data_path, show_col_types = FALSE) |>
+  janitor::clean_names()
+
+required_cols <- c("site_name", "site_number", "reporting_area", "p450", "sod", "ibr_bio")
+missing_cols <- setdiff(required_cols, names(sites))
+if (length(missing_cols) > 0) {
+  stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
+}
+```
+
+## Prepare plotting data and colors
+
+```{r prepare-data}
+format_reporting_area <- function(x) {
+  x <- as.character(x)
+  x <- sub("\\.0$", "", x)
+  x
+}
+
+# Current table includes 9 reporting-area levels:
+# 6, 7, 8.1, 8.2, 9, 10, 11, 12, 13.
+# The palette supplied in the prompt has 8 colors, so this code adds one
+# controlled ninth color. Replace "#999999" if you choose a different ninth color.
+ra_levels <- c("6", "7", "8.1", "8.2", "9", "10", "11", "12", "13")
+
+ra_palette <- c(
+  "6"   = "#E69F00",
+  "7"   = "#56B4E9",
+  "8.1" = "#009E73",
+  "8.2" = "#0072B2",
+  "9"   = "#F0E442",
+  "10"  = "#D55E00",
+  "11"  = "#CC79A7",
+  "12"  = "#000000",
+  "13"  = "#999999"  # ninth reporting-area color; edit if needed
+)
+
+plot_df <- sites |>
+  mutate(
+    site_number = as.character(site_number),
+    reporting_area = format_reporting_area(reporting_area),
+    reporting_area = factor(reporting_area, levels = ra_levels)
+  ) |>
+  filter(!is.na(reporting_area))
+
+# Safety check: stops if a reporting area is present without a color assignment.
+missing_palette <- setdiff(levels(droplevels(plot_df$reporting_area)), names(ra_palette))
+if (length(missing_palette) > 0) {
+  stop("Missing reporting-area colors for: ", paste(missing_palette, collapse = ", "))
+}
+
+# Optional alternative: if you decide 8.1 and 8.2 should be collapsed into RA 8,
+# uncomment this block and replace the ra_levels / ra_palette objects above.
+# plot_df <- sites |>
+#   mutate(
+#     site_number = as.character(site_number),
+#     reporting_area = format_reporting_area(reporting_area),
+#     reporting_area = if_else(reporting_area %in% c("8.1", "8.2"), "8", reporting_area),
+#     reporting_area = factor(reporting_area, levels = c("6", "7", "8", "9", "10", "11", "12", "13"))
+#   ) |>
+#   filter(!is.na(reporting_area))
+#
+# ra_palette <- c(
+#   "6" = "#E69F00", "7" = "#56B4E9", "8" = "#009E73", "9" = "#F0E442",
+#   "10" = "#0072B2", "11" = "#D55E00", "12" = "#CC79A7", "13" = "#000000"
+# )
+```
+
+## Plot helpers
+
+```{r plot-helpers}
+theme_biomarker_ms <- function(base_size = 11) {
+  theme_classic(base_size = base_size) +
+    theme(
+      axis.text.x = element_text(angle = 35, hjust = 1, vjust = 1),
+      axis.title.x = element_text(margin = margin(t = 6)),
+      axis.title.y = element_text(margin = margin(r = 6)),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      legend.key.width = unit(0.8, "cm"),
+      strip.background = element_blank(),
+      plot.title = element_text(face = "bold", size = rel(1.0)),
+      plot.tag = element_text(face = "bold", size = rel(1.2))
+    )
+}
+
+make_biomarker_box <- function(df, y_var, y_label, panel_title) {
+  ggplot(df, aes(x = reporting_area, y = .data[[y_var]], fill = reporting_area)) +
+    geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.35, color = "grey45") +
+    geom_boxplot(
+      width = 0.62,
+      outlier.shape = NA,
+      linewidth = 0.35,
+      color = "grey25",
+      alpha = 0.85
+    ) +
+    geom_point(
+      shape = 21,
+      color = "grey20",
+      stroke = 0.18,
+      size = 1.8,
+      alpha = 0.75,
+      position = position_jitter(width = 0.13, height = 0)
+    ) +
+    scale_fill_manual(values = ra_palette, drop = FALSE) +
+    labs(
+      title = panel_title,
+      x = "Reporting Area",
+      y = y_label,
+      fill = "Reporting Area"
+    ) +
+    guides(fill = guide_legend(nrow = 1, byrow = TRUE)) +
+    theme_biomarker_ms()
+}
+```
+
+## Figure: P450, SOD, and Biomarker IBR
+
+```{r fig-biomarker-3panel, fig.width=12, fig.height=4.8, dpi=400, fig.cap="Figure X. Site-level biomarker distributions across Puget Sound reporting areas. Boxplots show median and interquartile range; points represent individual sites. Dashed lines indicate the reference-centered zero line used for standardized biological response metrics."}
+p_p450 <- make_biomarker_box(
+  df = plot_df,
+  y_var = "p450",
+  y_label = "P450 activity",
+  panel_title = "P450 activity"
+)
+
+p_sod <- make_biomarker_box(
+  df = plot_df,
+  y_var = "sod",
+  y_label = "SOD activity",
+  panel_title = "SOD activity"
+)
+
+p_ibr_bio <- make_biomarker_box(
+  df = plot_df,
+  y_var = "ibr_bio",
+  y_label = "IBR Biomarker",
+  panel_title = "IBR Biomarker"
+)
+
+fig_biomarker_3panel <- (p_p450 | p_sod | p_ibr_bio) +
+  plot_layout(ncol = 3, guides = "collect") +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.position = "bottom",
+    plot.tag = element_text(face = "bold", size = 14)
+  )
+
+fig_biomarker_3panel
+```
+
+## Save figure
+
+```{r save-figure}
+fig_dir <- file.path("..", "output", "figures")
+if (!dir.exists(fig_dir)) dir.create(fig_dir, recursive = TRUE)
+
+ggsave(
+  filename = file.path(fig_dir, "Fig_biomarker_3panel_reporting_area.png"),
+  plot = fig_biomarker_3panel,
+  width = 12,
+  height = 4.8,
+  dpi = 400,
+  bg = "white"
+)
+
+ggsave(
+  filename = file.path(fig_dir, "Fig_biomarker_3panel_reporting_area.pdf"),
+  plot = fig_biomarker_3panel,
+  width = 12,
+  height = 4.8,
+  bg = "white"
+)
+```
