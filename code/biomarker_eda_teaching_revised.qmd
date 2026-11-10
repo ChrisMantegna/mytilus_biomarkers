@@ -1,0 +1,700 @@
+---
+title: "Mussel biomarker EDA | Teaching and reproducibility report"
+subtitle: "Univariate, grouped, bivariate, and multivariate exploration"
+author: "Teaching workflow — adapt before using research data"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    embed-resources: true
+    fig-width: 10
+    fig-height: 6
+    df-print: paged
+execute:
+  echo: true
+  warning: false
+  message: false
+  error: false
+editor: source
+---
+
+# How to use this report
+
+**Purpose.** Use this document to teach an undergraduate how to *inspect, describe, visualize, question, and document* a multivariate mussel dataset before hypothesis testing or model selection. Each section has a question, a justification, executable R code, and interpretation prompts.
+
+**Important:** the supplied CSV is **synthetic teaching data, not field observations**. Replace `data_path` with a research CSV before drawing scientific conclusions. The default path is relative to this `.qmd` file. Run `quarto render biomarker_eda_teaching.qmd` from this folder, or use **Render** in RStudio. The HTML is self-contained (`embed-resources: true`). Install required packages once with `install.packages(c("tidyverse"))`; Quarto must also be installed.
+
+**Data levels:** Individual mussels are nested within **sites** (analogous to individual experimental organisms within **tanks**); sites may also belong to reporting areas. The primary grouping unit in this teaching workflow is the **site/tank**. Individual organisms describe variation within units but are not independent replicates of a site- or tank-level treatment. Site means illustrate between-unit patterns. In experiments, whether tanks are independent replicates depends on treatment assignment and tank design, not merely the tank label. No inferential comparison in this notebook should be interpreted as a causal contaminant effect.
+
+**Recommended student deliverable:** At the end of each section, write three brief notes: (1) what you see, (2) what may explain it, and (3) what to verify next. Do **not** delete or transform data just because a plot looks unusual.
+
+# 1. Setup and data dictionary
+
+```{r}
+#| label: setup
+library(tidyverse)
+
+# CHANGE THIS PATH when moving from the synthetic example to your observations.
+data_path <- "data/teaching_example_SYNTHETIC.csv"
+
+# Identifier and grouping columns (edit names to match the input CSV).
+id_col <- "sample_id"
+site_col <- "site_number"
+area_col <- "reporting_area"
+
+# These variables must be numeric in the CSV. Modify this vector as needed.
+metrics <- c(
+  "p450", "sod", "shell", "length_mm", "height_mm", "width_mm",
+  "weight_initial_g", "weight_change_g", "weight_final_g", "ci2"
+)
+
+# A smaller subset for a readable scatterplot matrix, correlations, and PCA.
+multivariate_metrics <- c("p450", "sod", "shell", "length_mm", "ci2")
+
+# Optional metadata for teaching; adjust expected units to actual methods.
+metric_dictionary <- tibble(
+  metric = metrics,
+  meaning = c(
+    "Cytochrome P450 biomarker", "Superoxide dismutase biomarker",
+    "Shell thickness", "Shell length", "Shell height", "Shell width",
+    "Initial weight", "Change in weight", "Final weight",
+    "Condition index 2"
+  ),
+  units_or_note = c(
+    "VERIFY method and units", "VERIFY method and units", "VERIFY units",
+    "mm", "mm", "mm", "g", "g (signed change)", "g",
+    "VERIFY formula (derived variable)"
+  )
+)
+metric_dictionary
+```
+
+The metric names, units, biological meaning, analytical detection limits, and rules for zero/negative values should be verified against the methods and data dictionary. In particular, `weight_change_g` **can legitimately be negative**; flagging negatives does not mean they are errors.
+
+# 2. Import and structural audit
+
+**Question:** What is one row, what does each variable represent, and are IDs unique? Detect problems *before* summarizing.
+
+```{r}
+#| label: import
+stopifnot(file.exists(data_path))
+raw <- read_csv(data_path, show_col_types = FALSE)
+
+required_columns <- c(id_col, site_col, area_col, metrics)
+missing_columns <- setdiff(required_columns, names(raw))
+if (length(missing_columns) > 0) {
+  stop(paste("Missing required columns:", paste(missing_columns, collapse = ", ")))
+}
+
+# Coerce explicitly only when the column truly represents a measurement.
+# Readr parse problems are inspected below; never silently replace parse errors.
+dat <- raw %>%
+  mutate(
+    across(all_of(metrics), as.numeric),
+    across(all_of(c(id_col, site_col, area_col)), as.character)
+  )
+
+glimpse(dat)
+tibble(
+  rows = nrow(dat),
+  unique_samples = n_distinct(dat[[id_col]]),
+  unique_sites = n_distinct(dat[[site_col]]),
+  unique_areas = n_distinct(dat[[area_col]])
+)
+
+# One row per sample is assumed. Duplicates require an investigation.
+duplicate_ids <- dat %>% count(.data[[id_col]], name = "rows") %>% filter(rows > 1)
+duplicate_ids
+
+# A site number should not unexpectedly map to multiple reporting areas.
+site_area_audit <- dat %>%
+  distinct(.data[[site_col]], .data[[area_col]]) %>%
+  count(.data[[site_col]], name = "area_count") %>%
+  filter(area_count > 1)
+site_area_audit
+
+# Show readr parsing issues in original CSV (if any).
+problems(raw)
+```
+
+**Interpretation:** Check duplicate samples against lab worksheets. A site-to-area mismatch can signal merging errors. Beware: converting a nonnumeric entry with `as.numeric()` can produce `NA`; investigate source values if new missingness appears.
+
+# 3. Sampling design and missingness
+
+**Why:** Missing values can reflect processing failures, detection limits, site effects, or biological differences. Those possibilities are not interchangeable. Count denominators for every comparison.
+
+```{r}
+#| label: missingness
+site_counts <- dat %>%
+  count(.data[[area_col]], .data[[site_col]], name = "n_mussels")
+site_counts
+
+long <- dat %>%
+  select(all_of(c(id_col, site_col, area_col, metrics))) %>%
+  pivot_longer(cols = all_of(metrics), names_to = "metric", values_to = "value")
+
+missing_summary <- long %>%
+  group_by(metric) %>%
+  summarise(
+    n_total = n(),
+    n_observed = sum(!is.na(value)),
+    n_missing = sum(is.na(value)),
+    missing_pct = 100 * n_missing / n_total,
+    n_zero = sum(value == 0, na.rm = TRUE),
+    n_negative = sum(value < 0, na.rm = TRUE),
+    .groups = "drop"
+  ) %>% arrange(desc(missing_pct))
+missing_summary
+
+missing_by_area <- long %>%
+  group_by(.data[[area_col]], metric) %>%
+  summarise(missing_pct = 100 * mean(is.na(value)), .groups = "drop")
+
+ggplot(missing_by_area, aes(x = metric, y = .data[[area_col]], fill = missing_pct)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = sprintf("%.0f%%", missing_pct)), size = 2.8) +
+  scale_fill_gradient(low = "white", high = "steelblue4") +
+  labs(title = "Missing values by reporting area", x = NULL, y = "Reporting area", fill = "Missing (%)") +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+**Teaching questions:** Is missingness concentrated in P450, a particular reporting area, or a subset of sites? Were zeros substituted for non-detects or below-detection values in previous analyses? Keep original raw values and maintain an explicit data-cleaning log. Do not automatically replace zero, negative, or nonfinite measurements.
+
+# 4. Univariate descriptive statistics
+
+**Why these statistics?** Mean/SD emphasize magnitude and are sensitive to extremes; median/IQR and MAD describe robust location/spread. The coefficient of variation (CV = 100 × SD / |mean|) is a **relative** spread statistic for ratio-scale variables with a meaningful, nonzero mean; it is often misleading for signed changes, indices with arbitrary zero, or near-zero means. **MAD** uses `1.4826 × median(|x − median(x)|)` by default in R, approximately matching SD under normality.
+
+The 95% confidence interval below is a **t-based CI for the mean**, conditional on independent observations and a reasonable sampling model. It is **not** the range containing 95% of individuals and is **not** suitable for making site-replicated inferences from pooled individual mussels. The site-level CI later is usually a more relevant description for cross-site comparisons.
+
+```{r}
+#| label: univariate-summary
+univariate_summary <- long %>%
+  group_by(metric) %>%
+  summarise(
+    n_total = n(),
+    n = sum(!is.na(value)),
+    mean = mean(value, na.rm = TRUE),
+    median = median(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    variance = var(value, na.rm = TRUE),
+    minimum = min(value, na.rm = TRUE),
+    q1 = quantile(value, 0.25, na.rm = TRUE),
+    q3 = quantile(value, 0.75, na.rm = TRUE),
+    maximum = max(value, na.rm = TRUE),
+    iqr = IQR(value, na.rm = TRUE),
+    mad_scaled = mad(value, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    se = sd / sqrt(n),
+    ci95_low = if_else(n >= 2, mean - qt(0.975, df = pmax(n - 1, 1)) * se, NA_real_),
+    ci95_high = if_else(n >= 2, mean + qt(0.975, df = pmax(n - 1, 1)) * se, NA_real_),
+    cv_pct = if_else(n >= 2 & abs(mean) > 1e-8, 100 * sd / abs(mean), NA_real_),
+    mean_median_gap = mean - median
+  ) %>% arrange(metric)
+
+univariate_summary
+```
+
+If a metric has **no observed values**, `min`/`max` produce warnings (hidden here) and infinite results. Review `missing_summary` first; omit all-missing metrics from the vectors at the top rather than interpreting these statistics. Extremely small positive means are not necessarily meaningful denominators for CV: `1e-8` is only a computational guard, not a scientific validity threshold. Derived variables (including `ci2`) should not automatically be treated as independent of their component measurements.
+
+# 5. Distribution shape and normality diagnostics
+
+**Why:** Uneven or multimodal distributions, skew, truncation, and long tails influence which descriptive statistics and models are sensible. Histograms depend on binning; complement them with density views, Q–Q plots, and sample-level dots. A normality test is **not** a required gatekeeper for descriptive EDA. With large n it flags small deviations, and with small n it has low power. Normality assumptions for inferential models generally concern *residuals*, not necessarily raw biomarker values.
+
+## 5.1 Histograms
+
+```{r}
+#| label: histograms
+#| fig-height: 9
+ggplot(long, aes(x = value)) +
+  geom_histogram(bins = 25, fill = "steelblue3", color = "white", na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free", ncol = 3) +
+  labs(title = "Histograms of individual-level measurements", x = "Measured value (units differ)", y = "Number of mussels") +
+  theme_minimal()
+```
+
+## 5.2 Jittered dot plots (individual observations)
+
+```{r}
+#| label: dotplots
+#| fig-height: 9
+ggplot(long, aes(x = metric, y = value)) +
+  geom_jitter(width = 0.18, height = 0, alpha = 0.45, size = 0.9, na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free_y", ncol = 3) +
+  labs(title = "Individual observations: gaps and extreme values remain visible", x = NULL, y = "Measured value") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+
+## 5.3 Q–Q plots and density estimates
+
+```{r}
+#| label: qq-and-density
+#| fig-height: 9
+ggplot(long, aes(sample = value)) +
+  stat_qq(alpha = 0.5, na.rm = TRUE) +
+  stat_qq_line(color = "firebrick", na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free", ncol = 3) +
+  labs(title = "Normal Q–Q diagnostics (descriptive, not a pass/fail test)") +
+  theme_minimal()
+```
+
+```{r}
+#| label: densities
+#| fig-height: 9
+ggplot(long, aes(x = value)) +
+  geom_density(fill = "steelblue3", alpha = 0.35, na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free", ncol = 3) +
+  labs(title = "Smoothed densities: look for long tails or multiple peaks", x = "Measured value") +
+  theme_minimal()
+```
+
+## 5.4 Optional skewness check without an added package
+
+Mean–median differences, quantiles, and Q–Q plots are often more interpretable than a single skewness coefficient. Compare `mean_median_gap` in the table with the histogram; its units differ across metrics, so do not rank variables by the gap alone.
+
+# 6. Outliers: flag, inspect, do not delete
+
+**Why:** An outlier can be a transcription issue, a measurement artifact, a true biological response, or a mixture of groups. Three complementary rules are shown: Tukey's 1.5 × IQR fences, |z| > 3 (sensitive to outliers), and robust |z| > 3.5 using median/MAD. They are **screens, not deletion criteria**. A zero MAD means the robust z-score is not calculable by this method.
+
+```{r}
+#| label: outlier-flags
+outlier_flags <- long %>%
+  left_join(
+    univariate_summary %>% select(metric, mean, median, sd, q1, q3, iqr, mad_scaled),
+    by = "metric"
+  ) %>%
+  mutate(
+    tukey_low = q1 - 1.5 * iqr,
+    tukey_high = q3 + 1.5 * iqr,
+    iqr_flag = !is.na(value) & (value < tukey_low | value > tukey_high),
+    z_score = if_else(!is.na(sd) & sd > 0, (value - mean) / sd, NA_real_),
+    z_flag = !is.na(z_score) & abs(z_score) > 3,
+    robust_z = if_else(!is.na(mad_scaled) & mad_scaled > 0,
+                       (value - median) / mad_scaled, NA_real_),
+    robust_flag = !is.na(robust_z) & abs(robust_z) > 3.5,
+    any_flag = iqr_flag | z_flag | robust_flag
+  )
+
+flag_counts <- outlier_flags %>%
+  group_by(metric) %>%
+  summarise(
+    n_iqr = sum(iqr_flag),
+    n_z = sum(z_flag),
+    n_robust = sum(robust_flag),
+    n_any = sum(any_flag),
+    .groups = "drop"
+  )
+flag_counts
+
+flagged_records <- outlier_flags %>%
+  filter(any_flag) %>%
+  select(all_of(c(id_col, site_col, area_col)), metric, value,
+         iqr_flag, z_flag, robust_flag, z_score, robust_z) %>%
+  arrange(metric, desc(abs(robust_z)))
+
+# Display the first 40; the entire table can be exported later.
+head(flagged_records, 40)
+```
+
+**Important limitation:** These flags use **pooled measurements**. If reporting areas differ systematically, a valid site or area distribution can be labeled anomalous relative to the pooled set. Follow up by plotting flagged records within reporting areas and checking instrument notes, sample IDs, batches, and dilution factors.
+
+# 7. Grouped EDA: site first, tank-ready
+
+**Learning goal:** Distinguish **variation within a sampling/experimental unit** from **variation among units**. In the field, the grouping unit is a **site**; in a controlled experiment, substitute **tank ID** for `site_col`. Organisms in the same tank share an environment. Whether tanks are genuinely independent experimental replicates depends on how treatments are assigned and replicated.
+
+**Before looking at plots, ask:** How many organisms were measured per unit? Are measurements missing systematically in certain units? Are unusually high or low observations concentrated within a single unit?
+
+## 7.1 Replication audit: count organisms within each site
+
+```{r}
+#| label: site-replication
+site_replication <- dat %>%
+  group_by(.data[[site_col]]) %>%
+  summarise(
+    n_rows = n(),
+    n_unique_organisms = n_distinct(.data[[id_col]]),
+    .groups = "drop"
+  )
+site_replication
+
+ggplot(site_replication, aes(x = n_unique_organisms)) +
+  geom_bar(fill = "grey55") +
+  labs(title = "Number of organisms measured per site",
+       x = "Organisms per site", y = "Number of sites") +
+  theme_minimal()
+```
+
+**Teaching point:** Equal site counts do not imply equal organism counts. In a tank system, record both the number of tanks per treatment and the number of organisms per tank: these answer different questions.
+
+## 7.2 Within-site distributions: boxplots plus individual points
+
+Showing all sites in a single plot can be unreadable. The following **display-only** subset chooses the 12 sites with the most rows (ties broken by site ID); the complete dataset remains available for all subsequent summaries. Change `slice_head(n = 12)` to inspect more or fewer sites, or select specific IDs.
+
+```{r}
+#| label: site-boxplots
+#| fig-height: 10
+sites_to_display <- site_replication %>%
+  arrange(desc(n_rows), .data[[site_col]]) %>%
+  slice_head(n = 12) %>%
+  pull(all_of(site_col))
+
+site_plot_data <- long %>%
+  filter(.data[[site_col]] %in% sites_to_display)
+
+ggplot(site_plot_data, aes(x = .data[[site_col]], y = value)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey85", na.rm = TRUE) +
+  geom_jitter(width = 0.15, alpha = 0.5, size = 0.85, na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free_y", ncol = 3) +
+  labs(title = "Within-site distributions (12 display sites)",
+       subtitle = "Each dot represents one organism; boxes summarize organisms within sites",
+       x = "Site ID (replace with tank ID in experiments)", y = "Measured value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+**Interpretation:** Describe variation **within** each site before comparing across sites. With only a few individuals per site, quartiles and boxplot whiskers are unstable; the observed points carry important information. Boxplots do not show missing values, so use the counts below as well.
+
+## 7.3 Unit-level summaries: one row per site and metric
+
+This table is the core transferable output. It preserves the number measured per site, site mean, median, SD, scaled MAD, and CV. A CV is undefined or scientifically inappropriate when the mean is zero/near zero or values can meaningfully cross zero; interpret `weight_change_g` especially cautiously. The per-site t interval is **illustrative**, and with 4–6 organisms it can be very unstable. It describes uncertainty about a site mean under independence assumptions *within* that site, not evidence for treatment effects.
+
+```{r}
+#| label: site-level
+site_long <- long %>%
+  group_by(.data[[site_col]], .data[[area_col]], metric) %>%
+  summarise(
+    n_mussels = sum(!is.na(value)),
+    n_missing = sum(is.na(value)),
+    site_mean = if (all(is.na(value))) NA_real_ else mean(value, na.rm = TRUE),
+    site_median = if (all(is.na(value))) NA_real_ else median(value, na.rm = TRUE),
+    site_sd = sd(value, na.rm = TRUE),
+    site_mad_scaled = if (all(is.na(value))) NA_real_ else mad(value, na.rm = TRUE),
+    site_cv_percent = if (all(is.na(value))) NA_real_ else if (abs(mean(value, na.rm = TRUE)) < 1e-8) NA_real_ else 100 * sd(value, na.rm = TRUE) / abs(mean(value, na.rm = TRUE)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    site_se = site_sd / sqrt(n_mussels),
+    site_ci95_low = if_else(n_mussels >= 2,
+                           site_mean - qt(0.975, df = pmax(n_mussels - 1, 1)) * site_se,
+                           NA_real_),
+    site_ci95_high = if_else(n_mussels >= 2,
+                            site_mean + qt(0.975, df = pmax(n_mussels - 1, 1)) * site_se,
+                            NA_real_)
+  )
+site_long
+```
+
+## 7.4 Between-site patterns: one point per site
+
+```{r}
+#| label: site-means-plot
+#| fig-height: 10
+ggplot(site_long, aes(x = reorder(.data[[site_col]], site_mean, na.rm = TRUE),
+                      y = site_mean)) +
+  geom_point(alpha = 0.8, na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free_y", ncol = 3) +
+  coord_flip() +
+  labs(title = "Between-site patterns: site means",
+       subtitle = "Each point is one site; inspect replication counts and uncertainty before comparing",
+       x = "Site", y = "Site mean") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 5))
+```
+
+**Teaching point:** The *within-unit* distribution and the *between-unit* distribution answer different questions. A single extreme organism need not make its site extreme; an extreme site mean can also arise from small or unbalanced replication. To avoid misleading comparisons, use tables to inspect `n_mussels` and missingness alongside the figure.
+
+## 7.5 Compare within-site and between-site variability
+
+The following separates two simple descriptive quantities: (a) the spread of the **site means** and (b) the typical **within-site SD**. This is **not** formal variance partitioning or an intraclass correlation coefficient; nested mixed models are more appropriate for those goals.
+
+```{r}
+#| label: within-between
+variability_by_metric <- site_long %>%
+  group_by(metric) %>%
+  summarise(
+    n_sites_with_data = sum(!is.na(site_mean)),
+    between_site_sd_of_means = sd(site_mean, na.rm = TRUE),
+    median_within_site_sd = median(site_sd, na.rm = TRUE),
+    median_site_n = median(n_mussels[n_mussels > 0], na.rm = TRUE),
+    .groups = "drop"
+  )
+variability_by_metric
+```
+
+**Discussion:** If the within-site SD is large relative to the between-site SD, what does that mean for the number of individuals sampled per site? What changes if tanks, rather than organisms, are independently assigned to treatment groups?
+
+## 7.6 Optional field-specific extension: reporting areas
+
+**Reporting area is not required to understand grouped EDA.** It is a second-level grouping in this field dataset: *organisms within sites within reporting areas*. To compare areas, aggregate **site means**, not all mussels pooled together, so each site contributes one observation. For a tank experiment, this second level could instead be **treatment**, **temperature**, **exposure concentration**, or another design factor, but only if properly replicated at the tank level.
+
+```{r}
+#| label: area-summary
+site_area_summary <- site_long %>%
+  group_by(.data[[area_col]], metric) %>%
+  summarise(
+    n_sites = sum(!is.na(site_mean)),
+    area_mean_of_site_means = if (all(is.na(site_mean))) NA_real_ else mean(site_mean, na.rm = TRUE),
+    site_mean_sd = sd(site_mean, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    site_mean_se = site_mean_sd / sqrt(n_sites),
+    ci95_low = if_else(n_sites >= 2,
+                       area_mean_of_site_means - qt(0.975, df = pmax(n_sites - 1, 1)) * site_mean_se,
+                       NA_real_),
+    ci95_high = if_else(n_sites >= 2,
+                        area_mean_of_site_means + qt(0.975, df = pmax(n_sites - 1, 1)) * site_mean_se,
+                        NA_real_)
+  )
+site_area_summary
+```
+
+```{r}
+#| label: reporting-area-optional-plot
+#| fig-height: 10
+ggplot(site_long, aes(x = .data[[area_col]], y = site_mean)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey90", na.rm = TRUE) +
+  geom_jitter(width = 0.16, alpha = 0.65, size = 0.9, na.rm = TRUE) +
+  facet_wrap(~ metric, scales = "free_y", ncol = 3) +
+  labs(title = "Optional: variation among sites within reporting areas",
+       subtitle = "Each dot is a site mean, not an individual mussel",
+       x = "Reporting area", y = "Site mean") +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+**Caution:** Site means reduce pseudoreplication but do not eliminate spatial autocorrelation; similarly, multiple organisms within one tank do not provide independent treatment replicates. For repeated tank sampling over time, include time and organism identity in the data structure, and do not treat repeated measures as independent.
+
+# 8. Bivariate relationships and potential confounding
+
+**Why:** Relationships can be nonlinear, heteroscedastic (changing spread), area-dependent, or driven by a handful of observations. Begin with plots, then calculate a correlation with the correct analysis unit. Correlation does not imply causation.
+
+## 8.1 Individual-level scatterplots (illustrative only)
+
+```{r}
+#| label: scatters
+individual_pairs <- dat %>%
+  select(all_of(c(id_col, site_col, area_col, multivariate_metrics)))
+
+ggplot(individual_pairs, aes(x = length_mm, y = shell, color = .data[[area_col]])) +
+  geom_point(alpha = 0.7, na.rm = TRUE) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", na.rm = TRUE) +
+  labs(title = "Example: shell thickness versus length", subtitle = "Exploratory line; individuals within site are not independent", x = "Length (mm)", y = "Shell thickness", color = "Reporting area") +
+  theme_minimal()
+
+ggplot(individual_pairs, aes(x = p450, y = sod, color = .data[[area_col]])) +
+  geom_point(alpha = 0.75, na.rm = TRUE) +
+  labs(title = "Example: P450 versus SOD", x = "P450 (check units)", y = "SOD (check units)") +
+  theme_minimal()
+```
+
+## 8.2 Pairwise scatterplot matrix (site means)
+
+`pairs()` is a **base R** tool. The diagonal shows variable names; off-diagonal panels reveal relationships, subgroups, and nonlinearity. Select a small interpretable set of variables because a 10×10 matrix becomes difficult to read.
+
+```{r}
+#| label: matrix
+#| fig-width: 9
+#| fig-height: 9
+site_wide <- site_long %>%
+  select(all_of(c(site_col, area_col)), metric, site_mean) %>%
+  pivot_wider(names_from = metric, values_from = site_mean)
+
+pairs_data <- site_wide %>%
+  select(all_of(multivariate_metrics))
+
+pairs(
+  pairs_data,
+  main = "Scatterplot matrix: site means",
+  pch = 19,
+  cex = 0.45,
+  col = rgb(0.1, 0.25, 0.55, 0.5)
+)
+```
+
+## 8.3 Pearson vs. Spearman correlation, sample sizes
+
+**Pearson** measures linear association and is sensitive to outliers. **Spearman** ranks variables and captures monotonic association with less sensitivity to extreme values, but neither removes confounding by location/size. `pairwise.complete.obs` uses **different pairs of sites for different correlations**; always report pairwise n. These matrices are *exploratory*—no p-values or multiple-testing claims are calculated.
+
+```{r}
+#| label: correlations
+cor_data <- site_wide %>% select(all_of(multivariate_metrics))
+
+pearson_cor <- cor(cor_data, use = "pairwise.complete.obs", method = "pearson")
+spearman_cor <- cor(cor_data, use = "pairwise.complete.obs", method = "spearman")
+
+# Matrix multiplication counts sites where both measurements are available.
+observed <- !is.na(as.matrix(cor_data))
+paired_n <- t(observed) %*% observed
+storage.mode(paired_n) <- "integer"
+
+round(pearson_cor, 2)
+round(spearman_cor, 2)
+paired_n
+
+cor_display <- as_tibble(as.table(spearman_cor), .name_repair = "minimal") %>%
+  set_names(c("metric_x", "metric_y", "rho"))
+
+ggplot(cor_display, aes(x = metric_x, y = metric_y, fill = rho)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = sprintf("%.2f", rho)), size = 3) +
+  scale_fill_gradient2(low = "firebrick3", mid = "white", high = "steelblue4", midpoint = 0,
+                       limits = c(-1, 1)) +
+  coord_equal() +
+  labs(title = "Spearman correlations among site means", x = NULL, y = NULL, fill = "rho") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## 8.4 Derived measurements and redundant variables
+
+Length, height, width, initial/final weight, and condition indices can be mechanically related through body size or their formulas. **A strong correlation is not necessarily evidence for a shared stress-response mechanism.** Check definitions before including such variables together in PCA or regression. Consider exploring biomarker-to-morphometric correlations separately from size-to-size correlations.
+
+# 9. Multivariate exploration: PCA (optional teaching extension)
+
+**Question:** Do sites occupy gradients in *combined* biomarker and morphometric measurements? PCA is an unsupervised **linear** dimension-reduction method, not evidence of distinct ecological groups or contaminant causation. Standardizing is necessary because measurement units differ. Complete-case selection can alter site representation; report retained sites.
+
+```{r}
+#| label: pca
+pca_input <- site_wide %>%
+  select(all_of(c(site_col, area_col, multivariate_metrics))) %>%
+  drop_na(all_of(multivariate_metrics))
+
+pca_n_sites <- nrow(pca_input)
+pca_dropped_sites <- nrow(site_wide) - pca_n_sites
+
+tibble(n_sites_retained = pca_n_sites,
+       n_sites_excluded_due_to_missingness = pca_dropped_sites)
+
+# No imputation is performed; only run when sufficient complete sites exist.
+if (pca_n_sites >= 5) {
+  pca_matrix <- pca_input %>% select(all_of(multivariate_metrics))
+  pca_sd <- sapply(pca_matrix, sd)
+  if (all(is.finite(pca_sd) & pca_sd > 0)) {
+    pca_fit <- prcomp(pca_matrix, center = TRUE, scale. = TRUE)
+    pca_variance <- 100 * pca_fit$sdev^2 / sum(pca_fit$sdev^2)
+    print(tibble(PC = paste0("PC", seq_along(pca_variance)), percent_variance = pca_variance))
+    print(round(pca_fit$rotation[, 1:2, drop = FALSE], 3))
+
+    pca_scores <- bind_cols(
+      pca_input %>% select(all_of(c(site_col, area_col))),
+      as_tibble(pca_fit$x[, 1:2, drop = FALSE])
+    )
+
+    print(
+      ggplot(pca_scores, aes(x = PC1, y = PC2, color = .data[[area_col]])) +
+        geom_hline(yintercept = 0, color = "grey80") +
+        geom_vline(xintercept = 0, color = "grey80") +
+        geom_point(size = 2.3, alpha = 0.85) +
+        labs(title = "PCA of standardized site means",
+             x = paste0("PC1 (", round(pca_variance[1], 1), "%)"),
+             y = paste0("PC2 (", round(pca_variance[2], 1), "%)"),
+             color = "Reporting area") +
+        theme_minimal()
+    )
+  } else {
+    cat("PCA skipped: at least one selected variable is constant or invalid.\n")
+  }
+} else {
+  cat("PCA skipped: fewer than five complete sites.\n")
+}
+```
+
+**Interpretation:** Determine which variables contribute most strongly to PC1/PC2 using the loadings; ask whether outliers or missingness are driving patterns. Do not treat apparent clusters as confirmed groups. PCA can overemphasize redundant size measurements. A follow-up would compare a biomarker-only PCA against a morphometrics-only PCA and, where scientifically justified, contaminant indices.
+
+# 10. Sensitivity checks and honest reporting
+
+Exploratory plots should be compared **with and without suspected technical artifacts** only after reviewing the original data and documenting criteria. They should not be manipulated to obtain desired correlations.
+
+```{r}
+#| label: sensitivity
+# Compare a flagged versus unflagged summary, WITHOUT changing the data.
+flag_sensitivity <- outlier_flags %>%
+  group_by(metric) %>%
+  summarise(
+    n_all = sum(!is.na(value)),
+    n_flagged = sum(any_flag),
+    mean_all = mean(value, na.rm = TRUE),
+    mean_unflagged = if (all(is.na(value[!any_flag]))) NA_real_
+                     else mean(value[!any_flag], na.rm = TRUE),
+    median_all = median(value, na.rm = TRUE),
+    median_unflagged = if (all(is.na(value[!any_flag]))) NA_real_
+                       else median(value[!any_flag], na.rm = TRUE),
+    .groups = "drop"
+  )
+flag_sensitivity
+```
+
+The `mean_unflagged` column is a **diagnostic**, not a recommended analysis dataset. Data exclusion requires a documented measurement or biological justification, applied consistently.
+
+# 11. Suggested additional EDA before modeling
+
+1. **Measurement QC and limits:** Identify detection/quantitation limits; batch, plate, assay date, technician, and calibration effects; verify biomarker normalization (e.g. protein basis) and laboratory units.
+2. **Derived-variable audit:** Check whether `weight_final_g` is mathematically consistent with initial weight and change; confirm the `ci2` formula and any variable transformations.
+3. **Hierarchy and sampling:** Compare within-site vs. between-site spread; assess uneven replication and group sizes. Keep site/individual structure for hierarchical models.
+4. **Spatial and temporal structure:** Map site-level estimates, consider spatial autocorrelation and reporting-area boundaries; verify deployment season, duration, and sampling dates before pooling.
+5. **Nonlinearity and heteroscedasticity:** Use scatterplots with loess smooths and residual diagnostics if developing a model; avoid assuming linear relationships from correlations alone.
+6. **Distribution-specific alternatives:** Consider log transforms only for positive ratio-scale values with a scientific rationale; zero-inflated, signed, and censored values need different treatment. Preserve untransformed data.
+7. **Collinearity and confounding:** Separate mechanistic biomarkers from correlated size proxies and derived condition indices. Investigate sex, reproductive status, species mixture, and size where measured.
+8. **Multiplicity:** Exploratory correlations are hypothesis-generating. Register or specify a small number of focal comparisons before confirmatory testing; adjust for multiplicity when appropriate.
+9. **Robust uncertainty:** For strongly skewed or hierarchical data, consider site-level or cluster bootstrap intervals (with an explicit resampling plan), rather than defaulting to individual-level normal-theory intervals.
+10. **Missingness mechanisms:** Compare metadata for available vs. unavailable measurements. Missing-at-random should not be assumed simply because software can omit NAs.
+
+# 12. Reproducible outputs
+
+Tables are exported relative to the report folder. These are **outputs**, not corrected or cleaned observations. You can hand tables and this report to another student without losing the provenance of flags.
+
+```{r}
+#| label: export
+out_dir <- "output"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+write_csv(missing_summary, file.path(out_dir, "01_missingness_by_metric.csv"))
+write_csv(univariate_summary, file.path(out_dir, "02_univariate_summary.csv"))
+write_csv(flag_counts, file.path(out_dir, "03_outlier_flag_counts.csv"))
+write_csv(flagged_records, file.path(out_dir, "04_outlier_records_REVIEW_ONLY.csv"))
+write_csv(site_replication, file.path(out_dir, "05_site_replication.csv"))
+write_csv(site_long, file.path(out_dir, "06_site_level_summary.csv"))
+write_csv(site_area_summary, file.path(out_dir, "07_OPTIONAL_reporting_area_site_mean_ci.csv"))
+write_csv(variability_by_metric, file.path(out_dir, "12_within_between_site_variability.csv"))
+write_csv(flag_sensitivity, file.path(out_dir, "08_outlier_sensitivity_REVIEW_ONLY.csv"))
+write_csv(as.data.frame(pearson_cor) %>% rownames_to_column("metric"),
+          file.path(out_dir, "09_site_pearson_correlations.csv"))
+write_csv(as.data.frame(spearman_cor) %>% rownames_to_column("metric"),
+          file.path(out_dir, "10_site_spearman_correlations.csv"))
+write_csv(as.data.frame(paired_n) %>% rownames_to_column("metric"),
+          file.path(out_dir, "11_site_correlation_pairwise_n.csv"))
+cat("Exported descriptive tables to:", normalizePath(out_dir), "\n")
+```
+
+# 13. Student synthesis and decision log
+
+Complete these prompts **in the report or in a linked lab notebook entry**:
+
+| Question | Student response |
+|---|---|
+| What is the observational unit? What is the inferential unit? | *Write here* |
+| Which metrics have the most missing data, and is missingness patterned? | *Write here* |
+| Which distributions appear skewed, multimodal, or truncated? | *Write here* |
+| Where do mean/median and SD/MAD tell different stories? | *Write here* |
+| For which metrics is CV meaningful, and why? | *Write here* |
+| Which flagged records need a raw-data or lab-notebook check? | *Write here* |
+| How do within-site and between-site patterns differ? | *Write here* |
+| Which correlations may be driven by size, formulas, or shared site/tank conditions? | *Write here* |
+| How many sites are lost in a complete-case PCA? | *Write here* |
+| What three hypotheses or QC actions should be prioritized next? | *Write here* |
+
+**Interpretation vocabulary:** *distribution, central tendency, spread, skewness, outlier flag, missingness, precision, uncertainty, non-independence, covariation, confounding, scale, unit of analysis, and sensitivity*. Distinguish an observed **pattern**, a plausible **mechanism**, and an **inference** supported by a design/model.
+
+# 14. Reproducibility record
+
+```{r}
+#| label: reproducibility
+cat("Input CSV:", normalizePath(data_path), "\n")
+cat("Analysis timestamp:", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n")
+sessionInfo()
+```
