@@ -1,0 +1,313 @@
+sample_id,latitude,longitude,site_name,site_number,reporting_area
+1,47.40301418,-122.3305538,Des Moines Marina,21,11
+2,47.40301418,-122.3305538,Des Moines Marina,21,11
+3,47.40301418,-122.3305538,Des Moines Marina,21,11
+4,47.40301418,-122.3305538,Des Moines Marina,21,11
+5,47.7296079,-122.5506191,Suquamish Stormwater Outfall,34,10
+6,47.7296079,-122.5506191,Suquamish Stormwater Outfall,34,10
+7,47.7296079,-122.5506191,Suquamish Stormwater Outfall,34,10
+8,47.7296079,-122.5506191,Suquamish Stormwater Outfall,34,10
+9,47.2619,-122.7376,Pennrose Point State Park,50,13
+10,47.2619,-122.7376,Pennrose Point State Park,50,13
+11,47.2619,-122.7376,Pennrose Point State Park,50,13
+12,47.2619,-122.7376,Pennrose Point State Park,50,13
+13,48.02667,-122.75076,S of Skunk Island,9,9
+14,48.02667,-122.75076,S of Skunk Island,9,9
+15,48.02667,-122.75076,S of Skunk Island,9,9
+16,48.02667,-122.75076,S of Skunk Island,9,9
+17,47.94968,-122.30158,Mukilteo,65,8.2
+18,47.94968,-122.30158,Mukilteo,65,8.2
+19,47.94968,-122.30158,Mukilteo,65,8.2
+20,47.94968,-122.30158,Mukilteo,65,8.2
+21,47.8111,-122.388,Edmonds Marina,68,9
+22,47.8111,-122.388,Edmonds Marina,68,9
+23,47.8111,-122.388,Edmonds Marina,68,9
+24,47.8111,-122.388,Edmonds Marina,68,9
+25,48.68975,-122.50434,"Chuckanut, Clark's Point",74,7
+26,48.68975,-122.50434,"Chuckanut, Clark's Point",74,7
+27,48.68975,-122.50434,"Chuckanut, Clark's Point",74,7
+28,48.68975,-122.50434,"Chuckanut, Clark's Point",74,7
+29,47.58766,-122.35065,"Elliott Bay, Harbor Island, Pier 17",14,10
+30,47.58766,-122.35065,"Elliott Bay, Harbor Island, Pier 17",14,10
+31,47.58766,-122.35065,"Elliott Bay, Harbor Island, Pier 17",14,10
+32,47.58766,-122.35065,"Elliott Bay, Harbor Island, Pier 17",14,10
+33,48.8208,-122.7101,"Cherry Point Aquatic Reserve, Conoco Phillips",75,7
+34,48.8208,-122.7101,"Cherry Point Aquatic Reserve, Conoco Phillips",75,7
+35,48.8208,-122.7101,"Cherry Point Aquatic Reserve, Conoco Phillips",75,7
+36,48.8208,-122.7101,"Cherry Point Aquatic Reserve, Conoco Phillips",75,7
+37,47.29,-122.41,Comm Bay Skookum,45,11
+38,47.29,-122.41,Comm Bay Skookum,45,11
+39,47.29,-122.41,Comm Bay Skookum,45,11
+40,47.29,-122.41,Comm Bay Skookum,45,11
+41,48.21423,-122.718972,Penn Cove Reference,3,8.1
+42,48.21423,-122.718972,Penn Cove Reference,3,8.1
+43,48.21423,-122.718972,Penn Cove Reference,3,8.1
+44,48.21423,-122.718972,Penn Cove Reference,3,8.1
+45,47.6427936,-122.6967068,"Silverdale, Dyes Inlet",35,10
+46,47.6427936,-122.6967068,"Silverdale, Dyes Inlet",35,10
+47,47.6427936,-122.6967068,"Silverdale, Dyes Inlet",35,10
+48,47.6427936,-122.6967068,"Silverdale, Dyes Inlet",35,10
+49,48.69368,-122.90985,"Eastsound, Fishing Bay",60,7
+50,48.69368,-122.90985,"Eastsound, Fishing Bay",60,7
+51,48.69368,-122.90985,"Eastsound, Fishing Bay",60,7
+52,48.69368,-122.90985,"Eastsound, Fishing Bay",60,7
+53,47.54167,-122.64034,Kitsap St Boat Launch,25,10
+54,47.54167,-122.64034,Kitsap St Boat Launch,25,10
+55,47.54167,-122.64034,Kitsap St Boat Launch,25,10
+56,47.54167,-122.64034,Kitsap St Boat Launch,25,10
+57,47.61889,-122.5275,Eagle Harbor Dr,31,10
+58,47.61889,-122.5275,Eagle Harbor Dr,31,10
+59,47.61889,-122.5275,Eagle Harbor Dr,31,10
+60,47.61889,-122.5275,Eagle Harbor Dr,31,10
+61,48.482448,-122.583879,"Fidalgo Bay Aq Reserve, Weaverling Spit",63,7
+62,48.482448,-122.583879,"Fidalgo Bay Aq Reserve, Weaverling Spit",63,7
+63,48.482448,-122.583879,"Fidalgo Bay Aq Reserve, Weaverling Spit",63,7
+64,48.482448,-122.583879,"Fidalgo Bay Aq Reserve, Weaverling Spit",63,7
+65,47.11795,-122.83359,Meyer's Point - Henderson Inlet,71,13
+66,47.11795,-122.83359,Meyer's Point - Henderson Inlet,71,13
+67,47.11795,-122.83359,Meyer's Point - Henderson Inlet,71,13
+68,47.11795,-122.83359,Meyer's Point - Henderson Inlet,71,13
+69,47.61862,-122.36108,Elliot Bay Myrtle Edwards,19,10
+70,47.61862,-122.36108,Elliot Bay Myrtle Edwards,19,10
+71,47.61862,-122.36108,Elliot Bay Myrtle Edwards,19,10
+72,47.61862,-122.36108,Elliot Bay Myrtle Edwards,19,10
+73,47.61862,-122.36108,Elliot Bay Myrtle Edwards,19,10
+74,47.386977,-122.6367089,"Purdy, Burley Lagoon",47,13
+75,47.386977,-122.6367089,"Purdy, Burley Lagoon",47,13
+76,47.386977,-122.6367089,"Purdy, Burley Lagoon",47,13
+77,47.386977,-122.6367089,"Purdy, Burley Lagoon",47,13
+78,47.607,-122.342,"Seattle Aquarium, Pier 59",17,10
+79,47.607,-122.342,"Seattle Aquarium, Pier 59",17,10
+80,47.607,-122.342,"Seattle Aquarium, Pier 59",17,10
+81,47.607,-122.342,"Seattle Aquarium, Pier 59",17,10
+82,48.024789,-122.998135,Jamestown,2,6
+83,48.024789,-122.998135,Jamestown,2,6
+84,48.024789,-122.998135,Jamestown,2,6
+85,48.024789,-122.998135,Jamestown,2,6
+86,48.024789,-122.998135,Jamestown,2,6
+87,48.024789,-122.998135,Jamestown,2,6
+88,48.02218,-122.728709,Oak Bay County Park,10,9
+89,48.02218,-122.728709,Oak Bay County Park,10,9
+90,48.02218,-122.728709,Oak Bay County Park,10,9
+91,48.02218,-122.728709,Oak Bay County Park,10,9
+92,47.63237,-122.37869,"Smith Cove, Terminal 91",15,10
+93,47.63237,-122.37869,"Smith Cove, Terminal 91",15,10
+94,47.63237,-122.37869,"Smith Cove, Terminal 91",15,10
+95,47.63237,-122.37869,"Smith Cove, Terminal 91",15,10
+96,47.68234,-122.5064,Brackenwood Ln,23,10
+97,47.68234,-122.5064,Brackenwood Ln,23,10
+98,47.68234,-122.5064,Brackenwood Ln,23,10
+99,47.68234,-122.5064,Brackenwood Ln,23,10
+100,48.04906,-122.7724,Chimacum Creek delta,8,9
+101,48.04906,-122.7724,Chimacum Creek delta,8,9
+102,48.04906,-122.7724,Chimacum Creek delta,8,9
+103,48.04906,-122.7724,Chimacum Creek delta,8,9
+104,47.5706,-122.9717,Hood Canal Holly,29,12
+105,47.5706,-122.9717,Hood Canal Holly,29,12
+106,47.5706,-122.9717,Hood Canal Holly,29,12
+107,47.5706,-122.9717,Hood Canal Holly,29,12
+108,47.5706,-122.9717,Hood Canal Holly,29,12
+109,47.5706,-122.9717,Hood Canal Holly,29,12
+110,47.3062,-122.5145,Point Defiance Ferry,43,11
+111,47.3062,-122.5145,Point Defiance Ferry,43,11
+112,47.3062,-122.5145,Point Defiance Ferry,43,11
+113,47.3062,-122.5145,Point Defiance Ferry,43,11
+114,47.292549,-122.412175,"Comm Bay, Dick Gilmur Launch",48,11
+115,47.292549,-122.412175,"Comm Bay, Dick Gilmur Launch",48,11
+116,47.292549,-122.412175,"Comm Bay, Dick Gilmur Launch",48,11
+117,47.292549,-122.412175,"Comm Bay, Dick Gilmur Launch",48,11
+118,47.259189,-122.434689,Thea Foss Waterway,46,11
+119,47.259189,-122.434689,Thea Foss Waterway,46,11
+120,47.259189,-122.434689,Thea Foss Waterway,46,11
+121,47.259189,-122.434689,Thea Foss Waterway,46,11
+122,47.259189,-122.434689,Thea Foss Waterway,46,11
+123,47.29464,-122.53053,Salmon Beach,40,11
+124,47.29464,-122.53053,Salmon Beach,40,11
+125,47.29464,-122.53053,Salmon Beach,40,11
+126,47.29464,-122.53053,Salmon Beach,40,11
+127,47.1905742,-122.5834897,Chambers Bay Park,56,13
+128,47.1905742,-122.5834897,Chambers Bay Park,56,13
+129,47.1905742,-122.5834897,Chambers Bay Park,56,13
+130,47.1905742,-122.5834897,Chambers Bay Park,56,13
+131,47.33785,-122.58277,Gig Harbor Boat Launch,58,11
+132,47.33785,-122.58277,Gig Harbor Boat Launch,58,11
+133,47.33785,-122.58277,Gig Harbor Boat Launch,58,11
+134,47.33785,-122.58277,Gig Harbor Boat Launch,58,11
+135,48.0617,-122.2939,Tulalip Bay,67,8.2
+136,48.0617,-122.2939,Tulalip Bay,67,8.2
+137,48.0617,-122.2939,Tulalip Bay,67,8.2
+138,48.0617,-122.2939,Tulalip Bay,67,8.2
+139,48.0617,-122.2939,Tulalip Bay,67,8.2
+140,48.0617,-122.2939,Tulalip Bay,67,8.2
+141,47.2632444,-122.385731,Blair Waterway #2,42,11
+142,47.2632444,-122.385731,Blair Waterway #2,42,11
+143,47.2632444,-122.385731,Blair Waterway #2,42,11
+144,47.2632444,-122.385731,Blair Waterway #2,42,11
+145,47.38566,-122.627255,Purdy - Dexters,57,13
+146,47.38566,-122.627255,Purdy - Dexters,57,13
+147,47.38566,-122.627255,Purdy - Dexters,57,13
+148,47.38566,-122.627255,Purdy - Dexters,57,13
+149,47.27568,-122.4173,Blair Waterway,41,11
+150,47.27568,-122.4173,Blair Waterway,41,11
+151,47.27568,-122.4173,Blair Waterway,41,11
+152,47.27568,-122.4173,Blair Waterway,41,11
+153,47.57995505,-122.6786,Madrona Pont,28,10
+154,47.57995505,-122.6786,Madrona Pont,28,10
+155,47.57995505,-122.6786,Madrona Pont,28,10
+156,47.57995505,-122.6786,Madrona Pont,28,10
+157,47.2694,-122.4243,"Comm Bay, Milwaukee Waterway",49,11
+158,47.2694,-122.4243,"Comm Bay, Milwaukee Waterway",49,11
+159,47.2694,-122.4243,"Comm Bay, Milwaukee Waterway",49,11
+160,47.2694,-122.4243,"Comm Bay, Milwaukee Waterway",49,11
+161,47.2694,-122.4243,"Comm Bay, Milwaukee Waterway",49,11
+162,48.064957,-122.857524,Discovery Bay,12,6
+163,48.064957,-122.857524,Discovery Bay,12,6
+164,48.064957,-122.857524,Discovery Bay,12,6
+165,48.064957,-122.857524,Discovery Bay,12,6
+166,47.794695,-122.499858,Kingston Marina,36,10
+167,47.794695,-122.499858,Kingston Marina,36,10
+168,47.794695,-122.499858,Kingston Marina,36,10
+169,47.794695,-122.499858,Kingston Marina,36,10
+170,47.578117,-122.524833,Rich Passage,32,10
+171,47.578117,-122.524833,Rich Passage,32,10
+172,47.578117,-122.524833,Rich Passage,32,10
+173,47.578117,-122.524833,Rich Passage,32,10
+174,47.19483,-122.748665,Filucy Bay,59,13
+175,47.19483,-122.748665,Filucy Bay,59,13
+176,47.19483,-122.748665,Filucy Bay,59,13
+177,47.19483,-122.748665,Filucy Bay,59,13
+178,47.3539722,-122.69175,Minter Bay,55,13
+179,47.3539722,-122.69175,Minter Bay,55,13
+180,47.3539722,-122.69175,Minter Bay,55,13
+181,47.3539722,-122.69175,Minter Bay,55,13
+182,47.052362,-122.910912,West Bay Park,73,13
+183,47.052362,-122.910912,West Bay Park,73,13
+184,47.052362,-122.910912,West Bay Park,73,13
+185,47.052362,-122.910912,West Bay Park,73,13
+186,47.074603,-123.003527,Eld Inlet,72,13
+187,47.074603,-123.003527,Eld Inlet,72,13
+188,47.074603,-123.003527,Eld Inlet,72,13
+189,47.074603,-123.003527,Eld Inlet,72,13
+190,48.0697859,-122.2997764,Tulalip Reservation,70,8.2
+191,48.0697859,-122.2997764,Tulalip Reservation,70,8.2
+192,48.0697859,-122.2997764,Tulalip Reservation,70,8.2
+193,48.0697859,-122.2997764,Tulalip Reservation,70,8.2
+194,47.30515,-122.44441,Browns Point Lighthouse,54,11
+195,47.30515,-122.44441,Browns Point Lighthouse,54,11
+196,47.30515,-122.44441,Browns Point Lighthouse,54,11
+197,47.30515,-122.44441,Browns Point Lighthouse,54,11
+198,47.17650485,-122.9046464,Squaxin Island,38,13
+199,47.17650485,-122.9046464,Squaxin Island,38,13
+200,47.17650485,-122.9046464,Squaxin Island,38,13
+201,47.17650485,-122.9046464,Squaxin Island,38,13
+202,47.30008,-122.74566,Maple Hollow Park,51,13
+203,47.30008,-122.74566,Maple Hollow Park,51,13
+204,47.30008,-122.74566,Maple Hollow Park,51,13
+205,47.30008,-122.74566,Maple Hollow Park,51,13
+206,47.9726,-122.22977,Everett Harbor,66,8.2
+207,47.9726,-122.22977,Everett Harbor,66,8.2
+208,47.9726,-122.22977,Everett Harbor,66,8.2
+209,47.9726,-122.22977,Everett Harbor,66,8.2
+210,48.52108,-122.61531,N Avenue Park,62,7
+211,48.52108,-122.61531,N Avenue Park,62,7
+212,48.52108,-122.61531,N Avenue Park,62,7
+213,48.52108,-122.61531,N Avenue Park,62,7
+214,48.520971,-122.600717,Cap Sante,64,7
+215,48.520971,-122.600717,Cap Sante,64,7
+216,48.520971,-122.600717,Cap Sante,64,7
+217,48.520971,-122.600717,Cap Sante,64,7
+218,47.32598,-122.66724,Raft Island Park,53,13
+219,47.32598,-122.66724,Raft Island Park,53,13
+220,47.32598,-122.66724,Raft Island Park,53,13
+221,47.32598,-122.66724,Raft Island Park,53,13
+222,48.5069444,-123.0194444,Friday Harbor,61,7
+223,48.5069444,-123.0194444,Friday Harbor,61,7
+224,48.5069444,-123.0194444,Friday Harbor,61,7
+225,48.5069444,-123.0194444,Friday Harbor,61,7
+226,48.5069444,-123.0194444,Friday Harbor,61,7
+227,47.81407,-122.3825,Edmonds Ferry,69,9
+228,47.81407,-122.3825,Edmonds Ferry,69,9
+229,47.81407,-122.3825,Edmonds Ferry,69,9
+230,47.81407,-122.3825,Edmonds Ferry,69,9
+231,47.4436,-122.360316,Miller Creek,20,11
+232,47.4436,-122.360316,Miller Creek,20,11
+233,47.4436,-122.360316,Miller Creek,20,11
+234,47.4436,-122.360316,Miller Creek,20,11
+235,48.77636877,-122.5378679,Locust Beach,76,7
+236,48.77636877,-122.5378679,Locust Beach,76,7
+237,48.77636877,-122.5378679,Locust Beach,76,7
+238,48.77636877,-122.5378679,Locust Beach,76,7
+239,48.6793778,-122.6300583,Aiston Preserve,77,7
+240,48.6793778,-122.6300583,Aiston Preserve,77,7
+241,48.6793778,-122.6300583,Aiston Preserve,77,7
+242,48.6793778,-122.6300583,Aiston Preserve,77,7
+243,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+244,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+245,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+246,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+247,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+248,48.12823,-123.45715,Port Angeles Yacht Club,1,6
+249,47.30973,-122.68868,Kopachuck State Park,52,13
+250,47.30973,-122.68868,Kopachuck State Park,52,13
+251,47.30973,-122.68868,Kopachuck State Park,52,13
+252,47.66586,-122.56698,Williams Olson Park,26,10
+253,47.30973,-122.68868,Kopachuck State Park,52,13
+254,47.66586,-122.56698,Williams Olson Park,26,10
+255,47.66586,-122.56698,Williams Olson Park,26,10
+256,47.66586,-122.56698,Williams Olson Park,26,10
+257,47.66142,-122.49884,Skiff Point,24,10
+258,47.66142,-122.49884,Skiff Point,24,10
+259,47.66142,-122.49884,Skiff Point,24,10
+260,47.66142,-122.49884,Skiff Point,24,10
+261,47.55622,-122.54281,"Manchester, Stormwater Outfall",33,10
+262,47.55622,-122.54281,"Manchester, Stormwater Outfall",33,10
+263,47.55622,-122.54281,"Manchester, Stormwater Outfall",33,10
+264,47.55622,-122.54281,"Manchester, Stormwater Outfall",33,10
+265,47.33775,-122.59014,Donkey Creek Delta,44,11
+266,47.33775,-122.59014,Donkey Creek Delta,44,11
+267,47.33775,-122.59014,Donkey Creek Delta,44,11
+268,47.33775,-122.59014,Donkey Creek Delta,44,11
+269,47.78184,-122.83474,Broad Spit (Fisherman's Point),30,12
+270,47.78184,-122.83474,Broad Spit (Fisherman's Point),30,12
+271,47.78184,-122.83474,Broad Spit (Fisherman's Point),30,12
+272,47.78184,-122.83474,Broad Spit (Fisherman's Point),30,12
+273,47.346537,-122.82236,Reach Island,39,13
+274,47.346537,-122.82236,Reach Island,39,13
+275,47.346537,-122.82236,Reach Island,39,13
+276,47.346537,-122.82236,Reach Island,39,13
+277,47.44896,-122.372267,Three Tree Point,22,11
+278,47.44896,-122.372267,Three Tree Point,22,11
+279,47.44896,-122.372267,Three Tree Point,22,11
+280,47.44896,-122.372267,Three Tree Point,22,11
+281,47.50161,-122.38593,Arroyo Beach,13,11
+282,47.50161,-122.38593,Arroyo Beach,13,11
+283,47.50161,-122.38593,Arroyo Beach,13,11
+284,47.50161,-122.38593,Arroyo Beach,13,11
+285,47.50161,-122.38593,Arroyo Beach,13,11
+286,47.50161,-122.38593,Arroyo Beach,13,11
+287,47.6663,-122.4018,"Salmon Bay, Commodore Park",16,10
+288,47.6663,-122.4018,"Salmon Bay, Commodore Park",16,10
+289,47.6663,-122.4018,"Salmon Bay, Commodore Park",16,10
+290,47.6663,-122.4018,"Salmon Bay, Commodore Park",16,10
+291,47.671678,-122.406663,Shilshole Bay,18,10
+292,47.671678,-122.406663,Shilshole Bay,18,10
+293,47.671678,-122.406663,Shilshole Bay,18,10
+294,47.671678,-122.406663,Shilshole Bay,18,10
+295,47.60255,-122.66992,Rocky Point,27,10
+296,47.60255,-122.66992,Rocky Point,27,10
+297,47.60255,-122.66992,Rocky Point,27,10
+298,47.60255,-122.66992,Rocky Point,27,10
+299,47.5833538,-122.6414587,Lions Park,37,10
+300,47.5833538,-122.6414587,Lions Park,37,10
+301,47.5833538,-122.6414587,Lions Park,37,10
+302,47.5833538,-122.6414587,Lions Park,37,10
+303,48.255358,-122.507014,North Camano,7,8.1
+304,48.255358,-122.507014,North Camano,7,8.1
+305,48.255358,-122.507014,North Camano,7,8.1
+306,48.255358,-122.507014,North Camano,7,8.1
+307,48.018127,-122.699524,Maristone Island,11,9
+308,48.018127,-122.699524,Maristone Island,11,9
+309,48.018127,-122.699524,Maristone Island,11,9
+310,48.018127,-122.699524,Maristone Island,11,9
+311,48.018127,-122.699524,Maristone Island,11,9
+312,48.018127,-122.699524,Maristone Island,11,9
