@@ -1,7 +1,7 @@
 ---
-title: "Mussel biomarker EDA | Teaching and reproducibility report"
+title: "Mussel biomarker EDA"
 subtitle: "Univariate, grouped, bivariate, and multivariate exploration"
-author: "Teaching workflow — adapt before using research data"
+author: "CM" 
 date: today
 format:
   html:
@@ -22,23 +22,13 @@ execute:
 editor: source
 ---
 
-# How to use this report
-
-**Purpose.** Use this document to teach an undergraduate how to *inspect, describe, visualize, question, and document* a multivariate mussel dataset before hypothesis testing or model selection. Each section has a question, a justification, executable R code, and interpretation prompts.
-
-**Important:** the supplied CSV is **synthetic teaching data, not field observations**. Replace `data_path` with a research CSV before drawing scientific conclusions. The default path is relative to this `.qmd` file. Run `quarto render biomarker_eda_teaching.qmd` from this folder, or use **Render** in RStudio. The HTML is self-contained (`embed-resources: true`). Install required packages once with `install.packages(c("tidyverse"))`; Quarto must also be installed.
-
-**Data levels:** Individual mussels are nested within **sites** (analogous to individual experimental organisms within **tanks**); sites may also belong to reporting areas. The primary grouping unit in this teaching workflow is the **site/tank**. Individual organisms describe variation within units but are not independent replicates of a site- or tank-level treatment. Site means illustrate between-unit patterns. In experiments, whether tanks are independent replicates depends on treatment assignment and tank design, not merely the tank label. No inferential comparison in this notebook should be interpreted as a causal contaminant effect.
-
-**Recommended student deliverable:** At the end of each section, write three brief notes: (1) what you see, (2) what may explain it, and (3) what to verify next. Do **not** delete or transform data just because a plot looks unusual.
-
-# 1. Setup and data dictionary
+# Setup and data dictionary
 
 ```{r}
 #| label: setup
 library(tidyverse)
 
-# CHANGE THIS PATH when moving from the synthetic example to your observations.
+# raw data path
 data_path <- "data/teaching_example_SYNTHETIC.csv"
 
 # Identifier and grouping columns (edit names to match the input CSV).
