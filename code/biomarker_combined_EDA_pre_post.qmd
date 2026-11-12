@@ -1,0 +1,404 @@
+---
+title: "Mussel biomarkers | exploratory data analysis"
+subtitle: "Combined sample-level data • before and after documented cleaning"
+author: "Undergraduate teaching workflow"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    embed-resources: true
+    fig-width: 11
+    fig-height: 7
+execute:
+  echo: true
+  warning: true
+  message: false
+  error: false
+editor: source
+---
+
+# Purpose and boundaries
+
+**Separate workflow:** the prior source-file **audit/checklist** checks identifiers, metadata agreement, in-sheet calculations, and joins. This report does **not** repeat that audit. It starts with the combined sample-level table and explores biological distributions and relationships, without repairing or deleting observations.
+
+**Sequence:** source audit → **EDA before cleaning** → documented cleaning decisions (separate script) → **the same EDA after cleaning** → select analyses based on research questions, replication and assumptions. The pre- and post-cleaning EDA should use the same plots, metrics, and summaries so changes are interpretable.
+
+**Teaching rule:** no custom functions, for/while loops, `lapply`, `sapply`, `purrr`, or `across`. `pivot_longer`, `group_by`, `summarise` and ordinary base R statistical functions are used explicitly. The long data table allows the same beginner-level operations on each metric without iteration.
+
+**Interpretation rule:** an outlier flag is a question, not an instruction to remove a mussel. This dataset contains multiple mussels from the same site. Sample-level summaries describe observations; site-level summaries describe the 74 sampling locations. Neither level automatically establishes independent replicates for a subsequent inferential test.
+
+# 1. Setup: choose the run
+
+The provided `03-all_metrics_sample-level.csv` is the **pre-cleaning source**. For a post-cleaning run, first create a new, versioned CSV with an independently documented cleaning script. Never overwrite the original. Change the `input_file` and `run_label` below, then re-render this same report. Both reports produce distinct outputs.
+
+```{r}
+#| label: setup
+library(tidyverse)
+
+input_file <- "03-all_metrics_sample-level.csv"
+run_label <- "pre_cleaning"
+
+# AFTER cleaning, change ONLY these two settings:
+# input_file <- "04-all_metrics_sample-level_CLEANED.csv"
+# run_label <- "post_cleaning"
+
+stopifnot(file.exists(input_file))
+output_dir <- file.path("eda_output", run_label)
+dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Shared definitions for a fair pre/post comparison.
+metric_names <- c("p450", "sod", "shell", "condition_index",
+                  "weight_initial", "weight_final", "weight_change",
+                  "length", "width", "height")
+```
+
+# 2. Import combined measurements (not a second source audit)
+
+```{r}
+#| label: read-combined
+raw_data <- read_csv(input_file, show_col_types = FALSE)
+
+required_columns <- c("sample_id", "site_number", "reporting_area", metric_names)
+stopifnot(all(required_columns %in% names(raw_data)))
+
+# Work on a new object; don't mutate the source CSV.
+data <- raw_data %>%
+  mutate(sample_id = as.character(sample_id),
+         site_number = as.character(site_number),
+         reporting_area = as.character(reporting_area))
+
+# A short handoff check, not a full audit of original files.
+stopifnot(nrow(data) > 0)
+stopifnot(!anyDuplicated(data$sample_id))
+stopifnot(is.numeric(data$p450), is.numeric(data$sod),
+          is.numeric(data$shell), is.numeric(data$condition_index),
+          is.numeric(data$weight_initial), is.numeric(data$weight_final),
+          is.numeric(data$weight_change), is.numeric(data$length),
+          is.numeric(data$width), is.numeric(data$height))
+
+nrow(data)
+n_distinct(data$sample_id)
+n_distinct(data$site_number)
+glimpse(data)
+```
+
+**Data dictionary (verify units against the protocol):** `p450` and `sod` are measured enzyme-activity metrics (assay units/normalization need confirmation); `shell`, `length`, `width`, `height` are shell measurements (likely mm, verify); `weight_initial`, `weight_final`, `weight_change` are weights (g); `condition_index` is a derived, unitless measure whose formula must be verified. Negative `weight_change` can be meaningful depending on the sign convention. The provided combined CSV does **not** contain `ci1`, `ci2`, or `ci3` as separate variables. Do not import the old scripts' variable names into this dataset.
+
+# 3. Review completeness and zero values
+
+This is **measurement-level EDA**, not the prior multi-sheet reconciliation checklist. Report zeros and negatives; don't replace them here.
+
+```{r}
+#| label: long-and-missingness
+long_data <- data %>%
+  select(sample_id, site_number, reporting_area, all_of(metric_names)) %>%
+  pivot_longer(cols = all_of(metric_names), names_to = "metric", values_to = "value")
+
+missingness <- long_data %>%
+  group_by(metric) %>%
+  summarise(n_total = n(), n_observed = sum(!is.na(value)),
+            n_missing = sum(is.na(value)), pct_missing = 100 * mean(is.na(value)),
+            n_zero = sum(value == 0, na.rm = TRUE),
+            n_negative = sum(value < 0, na.rm = TRUE),
+            n_nonfinite = sum(!is.finite(value) & !is.na(value)),
+            .groups = "drop")
+missingness
+```
+
+**Questions:** Which zeros are valid measured zeros, below detection limits, or missing-value codes? Do these definitions differ for P450 and SOD? Were assay LOD/LOQ rules documented? Record answers in the cleaning-decision log, not in this report.
+
+# 4. Univariate descriptive statistics
+
+We include sample size, central tendency, spread (SD, IQR, MAD), coefficient of variation, and a *descriptive* t-based confidence interval. The t-based interval below assumes observations are independent; the mussels are clustered by site, so this is **not** the appropriate inferential CI for site or regional effects. CV can be misleading for signed variables or means near zero.
+
+```{r}
+#| label: descriptions
+metric_summary <- long_data %>%
+  group_by(metric) %>%
+  summarise(n = sum(!is.na(value)),
+            mean = mean(value, na.rm = TRUE),
+            median = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE),
+            variance = var(value, na.rm = TRUE),
+            min = min(value, na.rm = TRUE),
+            q1 = quantile(value, .25, na.rm = TRUE),
+            q3 = quantile(value, .75, na.rm = TRUE),
+            max = max(value, na.rm = TRUE),
+            iqr = IQR(value, na.rm = TRUE),
+            mad_scaled = mad(value, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(se = sd / sqrt(n),
+         ci95_low = if_else(n > 1, mean - qt(.975, n - 1) * se, NA_real_),
+         ci95_high = if_else(n > 1, mean + qt(.975, n - 1) * se, NA_real_),
+         cv_pct = if_else(n > 1 & abs(mean) > 1e-8, 100 * sd / abs(mean), NA_real_))
+metric_summary
+```
+
+# 5. Visualize individual measurements
+
+## 5.1 Histograms, dot plots, and boxplots
+
+```{r}
+#| label: histograms
+#| fig-height: 10
+ggplot(long_data, aes(x = value)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "white", na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free", ncol = 3) +
+  labs(title = "Sample-level histograms", x = "Measurement (unit differs by panel)", y = "Count") +
+  theme_minimal()
+```
+
+```{r}
+#| label: observations
+#| fig-height: 10
+ggplot(long_data, aes(x = metric, y = value)) +
+  geom_jitter(width = 0.2, size = 0.8, alpha = 0.4, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Individual observations", x = NULL, y = "Value") +
+  theme_minimal() + theme(axis.text.x = element_blank())
+```
+
+```{r}
+#| label: boxplots
+#| fig-height: 10
+ggplot(long_data, aes(x = metric, y = value)) +
+  geom_boxplot(outlier.color = "firebrick", na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Boxplots show potential extremes, not errors", x = NULL, y = "Value") +
+  theme_minimal() + theme(axis.text.x = element_blank())
+```
+
+## 5.2 Q–Q plots and normality
+
+Normality of the **raw marginal measurements** is not a prerequisite for every analysis. For models, the residuals, design and independence assumptions matter more. Shapiro–Wilk p-values below are an optional illustration, not a test-selection switch. A p-value below 0.05 is evidence *against* normality; a p-value above 0.05 is **not** proof of normality.
+
+```{r}
+#| label: qq
+#| fig-height: 10
+ggplot(long_data, aes(sample = value)) +
+  stat_qq(na.rm = TRUE) + stat_qq_line(na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free", ncol = 3) +
+  labs(title = "Sample-level Q–Q diagnostics") + theme_minimal()
+```
+
+```{r}
+#| label: shapiro-example
+# Illustrative tests for two named variables; review plots and sample structure.
+# shapiro.test requires 3–5000 finite observations with some variation.
+shapiro.test(data$p450[is.finite(data$p450)])
+shapiro.test(data$sod[is.finite(data$sod)])
+```
+
+# 6. Outlier screens (retain every observation)
+
+Use *three different descriptions of extreme observations*: Tukey's 1.5 × IQR fence, a conventional z-score, and a median/MAD-based robust score. Flags can disagree. They do not justify deletion by themselves. In the long table, the same sample can be flagged for different measurements; investigate the specific sample × metric combination.
+
+```{r}
+#| label: flags
+flags <- long_data %>%
+  left_join(metric_summary %>%
+              select(metric, mean, median, sd, q1, q3, iqr, mad_scaled),
+            by = "metric") %>%
+  mutate(iqr_low = q1 - 1.5 * iqr,
+         iqr_high = q3 + 1.5 * iqr,
+         iqr_flag = !is.na(value) & (value < iqr_low | value > iqr_high),
+         z_score = if_else(!is.na(sd) & sd > 0, (value - mean) / sd, NA_real_),
+         z_flag = !is.na(z_score) & abs(z_score) > 3,
+         robust_z = if_else(!is.na(mad_scaled) & mad_scaled > 0,
+                            (value - median) / mad_scaled, NA_real_),
+         robust_flag = !is.na(robust_z) & abs(robust_z) > 3.5,
+         any_flag = iqr_flag | z_flag | robust_flag)
+
+flag_counts <- flags %>%
+  group_by(metric) %>%
+  summarise(n_iqr = sum(iqr_flag), n_z = sum(z_flag),
+            n_robust = sum(robust_flag), n_any = sum(any_flag),
+            .groups = "drop")
+flag_counts
+
+flagged_observations <- flags %>%
+  filter(any_flag) %>%
+  select(sample_id, site_number, metric, value,
+         iqr_low, iqr_high, z_score, robust_z,
+         iqr_flag, z_flag, robust_flag) %>%
+  arrange(metric, site_number, sample_id)
+flagged_observations
+```
+
+**Discussion:** Do extremes cluster within a site? Could they reflect organism size, a local stressor, assay detection limits, transcription errors, or something else? Check methods and records before making decisions. Comparing all individual mussels against one pooled distribution may flag genuine *between-site* variation as extreme.
+
+# 7. Site-level EDA: replication and summaries
+
+Site is the primary grouping unit here; reporting area is a secondary spatial grouping. Use site **number** as the stable grouping key. Grouped means are descriptive and do not replace sample-level records.
+
+```{r}
+#| label: site-replication
+site_replication <- data %>%
+  group_by(site_number) %>%
+  summarise(n_mussels = n(), .groups = "drop")
+site_replication
+
+ggplot(site_replication, aes(x = n_mussels)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Mussels sampled per site", x = "Number of mussels", y = "Number of sites") +
+  theme_minimal()
+```
+
+```{r}
+#| label: site-summary
+site_summary <- long_data %>%
+  group_by(site_number, reporting_area, metric) %>%
+  summarise(n = sum(!is.na(value)),
+            mean = mean(value, na.rm = TRUE),
+            median = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE),
+            mad_scaled = mad(value, na.rm = TRUE),
+            .groups = "drop")
+site_summary
+```
+
+```{r}
+#| label: within-site
+#| fig-height: 8
+long_data %>%
+  filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
+  ggplot(aes(x = factor(site_number), y = value)) +
+  geom_boxplot(outlier.shape = NA, na.rm = TRUE) +
+  geom_jitter(width = 0.16, alpha = 0.5, size = 0.7, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 1) +
+  labs(title = "Within-site distributions: selected metrics", x = "Site number", y = "Value") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, size = 5))
+```
+
+```{r}
+#| label: ranked-sites
+#| fig-height: 8
+site_summary %>%
+  filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
+  ggplot(aes(x = reorder(site_number, mean), y = mean)) +
+  geom_point(size = 1.2) + coord_flip() +
+  facet_wrap(~metric, scales = "free_y", ncol = 2) +
+  labs(title = "Site-level metric means (common site order across panels)", x = "Site", y = "Site mean") +
+  theme_minimal() + theme(axis.text.y = element_text(size = 5))
+```
+
+# 8. Reporting-area exploration (secondary grouping)
+
+Each reporting area contains multiple sites. The area-level summary below treats **site means** as its observations (not each mussel), to avoid giving extra statistical weight to sites with more mussels.
+
+```{r}
+#| label: area-summary
+area_summary <- site_summary %>%
+  group_by(reporting_area, metric) %>%
+  summarise(n_sites = n(), mean_of_site_means = mean(mean, na.rm = TRUE),
+            median_of_site_means = median(mean, na.rm = TRUE),
+            sd_between_sites = sd(mean, na.rm = TRUE),
+            .groups = "drop")
+area_summary
+```
+
+```{r}
+#| label: area-plot
+#| fig-height: 9
+site_summary %>%
+  filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
+  ggplot(aes(x = factor(reporting_area), y = mean)) +
+  geom_boxplot(outlier.shape = NA, na.rm = TRUE) +
+  geom_jitter(width = .15, alpha = .7, size = 1, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 2) +
+  labs(title = "Between-site variation within reporting areas", x = "Reporting area", y = "Site mean") +
+  theme_minimal()
+```
+
+# 9. Bivariate and multivariate exploration
+
+Use sample-level scatterplots to inspect organism-level relationships, and site means for an exploratory cross-site matrix. Correlations are not causal evidence; their interpretation changes with the unit of analysis. PCA, PERMANOVA and post-hoc significance testing are **deferred to the later analysis module**, after cleaning choices and a research question are established.
+
+```{r}
+#| label: scatterplots
+ggplot(data, aes(x = length, y = shell)) +
+  geom_point(alpha = 0.55) +
+  geom_smooth(method = "lm", se = TRUE, na.rm = TRUE) +
+  labs(title = "Sample-level shell length vs thickness", x = "Length", y = "Shell thickness") +
+  theme_minimal()
+
+ggplot(data, aes(x = p450, y = sod)) +
+  geom_point(alpha = 0.55) +
+  labs(title = "Sample-level biomarker comparison", x = "P450", y = "SOD") +
+  theme_minimal()
+```
+
+```{r}
+#| label: site-matrix
+site_wide <- site_summary %>%
+  select(site_number, metric, mean) %>%
+  pivot_wider(names_from = metric, values_from = mean)
+
+# Choose interpretable, nonredundant measurements for a readable matrix.
+site_pairs <- site_wide %>%
+  select(p450, sod, shell, length, condition_index)
+
+pairs(site_pairs, main = "Site-mean scatterplot matrix", pch = 19, cex = 0.5)
+cor(site_pairs, method = "pearson", use = "pairwise.complete.obs")
+cor(site_pairs, method = "spearman", use = "pairwise.complete.obs")
+```
+
+# 10. Optional transformation *diagnostics* (do not replace raw values)
+
+Examine whether a transformation may make a distribution more interpretable, without quietly making it permanent. **Log transforms require strictly positive values.** The original SOD data may contain nonpositive observations; leave those as missing **in this diagnostic column only**. Whether a nonpositive value is a meaningful observation, below LOD, or an artifact is decided separately. A log1p transform is not a neutral substitute for analytical rules.
+
+```{r}
+#| label: transformations
+transform_preview <- data %>%
+  mutate(p450_log10_preview = if_else(p450 > 0, log10(p450), NA_real_),
+         sod_log10_preview = if_else(sod > 0, log10(sod), NA_real_))
+
+#| fig-height: 7
+transform_preview %>%
+  select(p450, p450_log10_preview, sod, sod_log10_preview) %>%
+  pivot_longer(everything(), names_to = "metric", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "white", na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free") +
+  labs(title = "Raw versus log10 diagnostic distributions", x = "Value") +
+  theme_minimal()
+```
+
+# 11. Export outputs for comparison and decisions
+
+The EDA **does not write a cleaned dataset**. It exports diagnostics, selected site-level summaries, and a copy of the input data labeled with this run. After a separate cleaning script creates a cleaned CSV, rerun this document under `post_cleaning`. Keep both report outputs and compare counts, distributions and site-level patterns before moving to inference.
+
+```{r}
+#| label: export
+write_csv(data, file.path(output_dir, "00_input_snapshot_UNMODIFIED.csv"))
+write_csv(missingness, file.path(output_dir, "01_missingness.csv"))
+write_csv(metric_summary, file.path(output_dir, "02_metric_descriptives.csv"))
+write_csv(flag_counts, file.path(output_dir, "03_outlier_flag_counts.csv"))
+write_csv(flagged_observations, file.path(output_dir, "04_flagged_observations_REVIEW.csv"))
+write_csv(site_replication, file.path(output_dir, "05_site_replication.csv"))
+write_csv(site_summary, file.path(output_dir, "06_site_metric_summary.csv"))
+write_csv(area_summary, file.path(output_dir, "07_area_metric_summary.csv"))
+```
+
+# 12. Student interpretation and decisions to carry forward
+
+Answer in the lab notebook before any cleaning actions:
+
+1. Which metrics are skewed or multimodal? Are patterns shared across sites?
+2. Are zeros and negative values expected by the assay and biological sign conventions?
+3. Which observations are flagged by IQR but not MAD (or vice versa)? What original records would you check?
+4. What differences emerge between the sample-level and site-level pictures?
+5. Would any transformation help a *specific downstream model*, or merely change the appearance of the plot?
+6. Which candidate cleaning rule could change site rankings, site-level variance, or the number of complete-case observations?
+7. What would count as evidence that cleaning was beneficial rather than simply making a figure look tidier?
+
+**Documentation standard:** log sample ID, metric, original value, reason for review, evidence checked, proposed treatment, who approved the decision, and the resulting value; include excluded records in the log. Keep **an unchanged raw CSV** and a **new cleaned CSV** with a version/date. For pre/post comparisons, hold the definitions and visual choices constant.
+
+## Comparison checklist after post-cleaning EDA
+
+Compare the pre/post `01_missingness.csv`, `02_metric_descriptives.csv`, `03_outlier_flag_counts.csv`, `05_site_replication.csv`, and `06_site_metric_summary.csv`. A change in sample size may be appropriate, but must be explained. Do not read a higher Shapiro p-value or fewer flagged records as independent evidence that cleaning was correct.

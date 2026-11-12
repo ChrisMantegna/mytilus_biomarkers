@@ -1,0 +1,718 @@
+---
+title: "Mussel biomarkers: four-source exploratory data assessment"
+subtitle: "Import separately → assess separately → validate joins → export a review-ready combined dataset"
+author: "CM | undergraduate teaching workflow"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    embed-resources: true
+    df-print: paged
+execute:
+  echo: true
+  warning: true
+  message: false
+  error: false
+editor: source
+---
+
+# Teaching goals and workflow
+
+This report extends the original biomarker EDA by **assessing four source files before joining any measurements**. Students should be able to distinguish an import error from a missing observation, an identity error from a biological outlier, and an assessment flag from a cleaning decision.
+
+**Stages:** (1) import; (2) assess each source independently; (3) compare identifiers and site metadata; (4) combine without altering measured values; (5) repeat exploratory assessment on combined values; (6) export a **review-ready, not cleaned** combined CSV plus QC tables; (7) document decisions for the next workflow.
+
+The code intentionally uses explicit blocks, base R, and introductory `dplyr`, `tidyr`, and `ggplot2`. **No custom functions, for/while loops, `purrr`, `lapply`, `sapply`, or `across`**. Repeated sections are intentional. `group_by()` and `summarise()` are introduced as basic data manipulation, not as programmer-written functions.
+
+One row is one mussel (`sample_id`); mussels are nested within sites. Site is the preferred grouping unit for cross-site comparisons. Every row in this file is retained unless a student later makes and records a justified decision.
+
+# 1. Setup and paths
+
+Place this `.qmd` in the same folder as the four source CSVs, or edit the four file paths below. Run from the project directory containing the `.qmd`. The `output/` directory is created on render.
+
+```{r}
+#| label: setup
+library(tidyverse)
+
+p450_file <- "01.1-biomarker_activity_p450.csv"
+sod_file <- "01.2-biomarker_activity_sod.csv"
+direct_file <- "02.1-morphometric_direct.csv"
+derived_file <- "02.2-morphometric_derived.csv"
+
+file.exists(p450_file)
+file.exists(sod_file)
+file.exists(direct_file)
+file.exists(derived_file)
+
+stopifnot(file.exists(p450_file), file.exists(sod_file),
+          file.exists(direct_file), file.exists(derived_file))
+
+out_dir <- "output"
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+**Column vocabulary (as actually supplied):** P450: `p450`; SOD: `sod`; direct: `weight_initial`, `length`, `width`, `height`, `weight_final`, `weight_change`; derived: `shell`, `condition_index`. Labels such as `length_mm`, `ci2`, and `weight_initial_g` in the earlier teaching example **do not occur in these CSVs**. Units, assay normalization and the formula for `condition_index` must be verified before interpretation; the original headers are retained in the exported data.
+
+# 2. Import each CSV independently
+
+`read_csv()` makes parsing assumptions. Check `problems()` for parsing errors. A value imported as a number can still be biologically questionable.
+
+```{r}
+#| label: four-imports
+p450_raw <- read_csv(p450_file, show_col_types = FALSE)
+sod_raw <- read_csv(sod_file, show_col_types = FALSE)
+direct_raw <- read_csv(direct_file, show_col_types = FALSE)
+derived_raw <- read_csv(derived_file, show_col_types = FALSE)
+
+names(p450_raw)
+names(sod_raw)
+names(direct_raw)
+names(derived_raw)
+
+problems(p450_raw)
+problems(sod_raw)
+problems(direct_raw)
+problems(derived_raw)
+```
+
+# 3. Dataset 1: P450 assessment
+
+## 3.1 Structure and identities
+
+```{r}
+#| label: p450-identity
+str(p450_raw)
+summary(p450_raw)
+p450_raw %>% count(sample_id, name = "n_rows") %>% filter(n_rows > 1)
+p450_raw %>% count(site_number, reporting_area, name = "n_mussels") %>% arrange(site_number)
+
+p450_audit <- p450_raw %>%
+  summarise(source = "p450", rows = n(), samples = n_distinct(sample_id),
+            sites = n_distinct(site_number), missing_ids = sum(is.na(sample_id)),
+            missing_p450 = sum(is.na(p450)),
+            zero_p450 = sum(p450 == 0, na.rm = TRUE),
+            negative_p450 = sum(p450 < 0, na.rm = TRUE),
+            nonfinite_p450 = sum(!is.finite(p450) & !is.na(p450)))
+p450_audit
+```
+
+## 3.2 Distribution and observation-level review
+
+```{r}
+#| label: p450-description
+p450_raw %>% summarise(n = sum(!is.na(p450)),
+                       mean = mean(p450, na.rm = TRUE),
+                       median = median(p450, na.rm = TRUE),
+                       sd = sd(p450, na.rm = TRUE),
+                       q1 = quantile(p450, .25, na.rm = TRUE),
+                       q3 = quantile(p450, .75, na.rm = TRUE),
+                       mad = mad(p450, na.rm = TRUE))
+
+ggplot(p450_raw, aes(x = p450)) +
+  geom_histogram(bins = 30, color = "white", fill = "steelblue") +
+  labs(title = "P450: inspect zeros, scale, tails", x = "P450 (confirm units)") + theme_minimal()
+
+ggplot(p450_raw, aes(sample = p450)) + stat_qq() + stat_qq_line() +
+  labs(title = "P450 Q–Q plot") + theme_minimal()
+
+p450_review <- p450_raw %>%
+  mutate(p450_zero_flag = !is.na(p450) & p450 == 0,
+         p450_negative_flag = !is.na(p450) & p450 < 0,
+         p450_nonfinite_flag = !is.na(p450) & !is.finite(p450)) %>%
+  filter(p450_zero_flag | p450_negative_flag | p450_nonfinite_flag)
+p450_review
+```
+
+**Discussion:** Does zero mean a true assay result, limit of detection, non-detect, or a previous substitution? Preserve zero pending method review.
+
+# 4. Dataset 2: SOD assessment
+
+## 4.1 Structure and identities
+
+```{r}
+#| label: sod-identity
+str(sod_raw)
+summary(sod_raw)
+sod_raw %>% count(sample_id, name = "n_rows") %>% filter(n_rows > 1)
+sod_raw %>% count(site_number, reporting_area, name = "n_mussels") %>% arrange(site_number)
+
+sod_audit <- sod_raw %>%
+  summarise(source = "sod", rows = n(), samples = n_distinct(sample_id),
+            sites = n_distinct(site_number), missing_ids = sum(is.na(sample_id)),
+            missing_sod = sum(is.na(sod)),
+            zero_sod = sum(sod == 0, na.rm = TRUE),
+            negative_sod = sum(sod < 0, na.rm = TRUE),
+            nonfinite_sod = sum(!is.finite(sod) & !is.na(sod)))
+sod_audit
+```
+
+## 4.2 Distribution and observation-level review
+
+```{r}
+#| label: sod-description
+sod_raw %>% summarise(n = sum(!is.na(sod)),
+                      mean = mean(sod, na.rm = TRUE),
+                      median = median(sod, na.rm = TRUE),
+                      sd = sd(sod, na.rm = TRUE),
+                      q1 = quantile(sod, .25, na.rm = TRUE),
+                      q3 = quantile(sod, .75, na.rm = TRUE),
+                      mad = mad(sod, na.rm = TRUE))
+
+ggplot(sod_raw, aes(x = sod)) +
+  geom_histogram(bins = 30, color = "white", fill = "steelblue") +
+  labs(title = "SOD: inspect negative and zero activity", x = "SOD (confirm units)") + theme_minimal()
+
+ggplot(sod_raw, aes(sample = sod)) + stat_qq() + stat_qq_line() +
+  labs(title = "SOD Q–Q plot") + theme_minimal()
+
+sod_review <- sod_raw %>%
+  mutate(sod_nonpositive_flag = !is.na(sod) & sod <= 0,
+         sod_nonfinite_flag = !is.na(sod) & !is.finite(sod)) %>%
+  filter(sod_nonpositive_flag | sod_nonfinite_flag)
+sod_review
+```
+
+**Discussion:** In this source, nonpositive SOD values are present. Do not silently replace them with a floor value. A proposed floor such as `0.0025` is a **later documented cleaning choice**, not an EDA step.
+
+# 5. Dataset 3: direct morphometrics
+
+## 5.1 Structure and identities
+
+```{r}
+#| label: direct-identity
+str(direct_raw)
+summary(direct_raw)
+direct_raw %>% count(sample_id, name = "n_rows") %>% filter(n_rows > 1)
+direct_raw %>% count(site_number, reporting_area, name = "n_mussels") %>% arrange(site_number)
+
+# Each field may have its own missingness.
+direct_missing <- direct_raw %>%
+  select(weight_initial, length, width, height, weight_final, weight_change) %>%
+  pivot_longer(everything(), names_to = "metric", values_to = "value") %>%
+  group_by(metric) %>%
+  summarise(n = n(), missing = sum(is.na(value)),
+            zero = sum(value == 0, na.rm = TRUE),
+            negative = sum(value < 0, na.rm = TRUE), .groups = "drop")
+direct_missing
+```
+
+## 5.2 Distributions and arithmetic consistency
+
+```{r}
+#| label: direct-description
+#| fig-height: 8
+direct_long <- direct_raw %>%
+  select(sample_id, site_number, weight_initial, length, width, height,
+         weight_final, weight_change) %>%
+  pivot_longer(cols = c(weight_initial, length, width, height, weight_final,
+                        weight_change), names_to = "metric", values_to = "value")
+
+direct_long %>% group_by(metric) %>%
+  summarise(n = sum(!is.na(value)), mean = mean(value, na.rm = TRUE),
+            median = median(value, na.rm = TRUE), sd = sd(value, na.rm = TRUE),
+            q1 = quantile(value, .25, na.rm = TRUE),
+            q3 = quantile(value, .75, na.rm = TRUE),
+            mad = mad(value, na.rm = TRUE), .groups = "drop")
+
+ggplot(direct_long, aes(value)) + geom_histogram(bins = 25, fill = "steelblue", color = "white") +
+  facet_wrap(~metric, scales = "free", ncol = 3) +
+  labs(title = "Direct morphometrics: univariate distributions", x = "Value (units vary)") + theme_minimal()
+
+# Observed sign convention suggests: initial - final ~= change.
+# 0.02 g is only an illustration of a review tolerance; verify the
+# actual recording precision before adopting a definitive threshold.
+direct_review <- direct_raw %>%
+  mutate(weight_difference_calculated = weight_initial - weight_final,
+         weight_difference_residual = weight_change - weight_difference_calculated,
+         weight_discrepancy_flag = !is.na(weight_difference_residual) &
+           abs(weight_difference_residual) > 0.02,
+         size_nonpositive_flag = length <= 0 | width <= 0 | height <= 0,
+         mass_nonpositive_flag = weight_initial <= 0 | weight_final <= 0)
+
+direct_review %>%
+  filter(weight_discrepancy_flag | size_nonpositive_flag | mass_nonpositive_flag) %>%
+  select(sample_id, site_number, weight_initial, weight_final, weight_change,
+         weight_difference_residual, weight_discrepancy_flag,
+         size_nonpositive_flag, mass_nonpositive_flag)
+```
+
+**Discussion:** A mathematical discrepancy might arise from rounding, transcription, different measurement definitions, or a derived column. Confirm the meaning of `weight_change` before correcting it.
+
+# 6. Dataset 4: derived morphometrics
+
+## 6.1 Structure and identities
+
+```{r}
+#| label: derived-identity
+str(derived_raw)
+summary(derived_raw)
+derived_raw %>% count(sample_id, name = "n_rows") %>% filter(n_rows > 1)
+derived_raw %>% count(site_number, reporting_area, name = "n_mussels") %>% arrange(site_number)
+
+derived_audit <- derived_raw %>%
+  summarise(source = "derived", rows = n(), samples = n_distinct(sample_id),
+            sites = n_distinct(site_number),
+            missing_shell = sum(is.na(shell)),
+            missing_condition_index = sum(is.na(condition_index)),
+            nonpositive_shell = sum(shell <= 0, na.rm = TRUE),
+            nonpositive_condition_index = sum(condition_index <= 0, na.rm = TRUE))
+derived_audit
+```
+
+## 6.2 Distributions and review records
+
+```{r}
+#| label: derived-description
+#| fig-height: 5
+derived_long <- derived_raw %>%
+  select(sample_id, site_number, shell, condition_index) %>%
+  pivot_longer(cols = c(shell, condition_index), names_to = "metric", values_to = "value")
+
+derived_long %>% group_by(metric) %>%
+  summarise(n = sum(!is.na(value)), mean = mean(value, na.rm = TRUE),
+            median = median(value, na.rm = TRUE), sd = sd(value, na.rm = TRUE),
+            q1 = quantile(value, .25, na.rm = TRUE),
+            q3 = quantile(value, .75, na.rm = TRUE),
+            mad = mad(value, na.rm = TRUE), .groups = "drop")
+
+ggplot(derived_long, aes(value)) + geom_histogram(bins = 25, fill = "steelblue", color = "white") +
+  facet_wrap(~metric, scales = "free") +
+  labs(title = "Derived morphometrics: inspect scales and values", x = "Value (units vary)") + theme_minimal()
+
+derived_review <- derived_raw %>%
+  mutate(shell_nonpositive_flag = !is.na(shell) & shell <= 0,
+         condition_nonpositive_flag = !is.na(condition_index) & condition_index <= 0) %>%
+  filter(shell_nonpositive_flag | condition_nonpositive_flag)
+derived_review
+```
+
+**Discussion:** Identify the precise `condition_index` formula before checking agreement against the direct measurements. Do not assume it equals the `ci2` field from a different dataset without source documentation.
+
+# 7. Compare keys, row coverage and metadata before joining
+
+## 7.1 Are all sample IDs present, and unique?
+
+```{r}
+#| label: key-coverage
+source_counts <- tibble(
+  source = c("p450", "sod", "direct", "derived"),
+  n_rows = c(nrow(p450_raw), nrow(sod_raw), nrow(direct_raw), nrow(derived_raw)),
+  n_unique_ids = c(n_distinct(p450_raw$sample_id), n_distinct(sod_raw$sample_id),
+                   n_distinct(direct_raw$sample_id), n_distinct(derived_raw$sample_id)),
+  n_sites = c(n_distinct(p450_raw$site_number), n_distinct(sod_raw$site_number),
+              n_distinct(direct_raw$site_number), n_distinct(derived_raw$site_number))
+)
+source_counts
+
+# An empty result means each source has identical ID coverage relative to P450.
+anti_join(p450_raw, sod_raw, by = "sample_id") %>% select(sample_id)
+anti_join(sod_raw, p450_raw, by = "sample_id") %>% select(sample_id)
+anti_join(p450_raw, direct_raw, by = "sample_id") %>% select(sample_id)
+anti_join(direct_raw, p450_raw, by = "sample_id") %>% select(sample_id)
+anti_join(p450_raw, derived_raw, by = "sample_id") %>% select(sample_id)
+anti_join(derived_raw, p450_raw, by = "sample_id") %>% select(sample_id)
+
+# Stop rather than create a many-to-many join if source IDs are not unique.
+stopifnot(nrow(p450_raw) == n_distinct(p450_raw$sample_id),
+          nrow(sod_raw) == n_distinct(sod_raw$sample_id),
+          nrow(direct_raw) == n_distinct(direct_raw$sample_id),
+          nrow(derived_raw) == n_distinct(derived_raw$sample_id))
+```
+
+## 7.2 Do matching IDs describe the same site?
+
+The P450 file is used **only as a provisional metadata reference**. Agreement is checked explicitly; P450 is not asserted to be more authoritative than the other files. Numeric coordinates are compared with a small computational tolerance rather than exact floating-point equality. Site names are compared as recorded, without silently trimming, standardizing, or replacing them.
+
+```{r}
+#| label: metadata-comparison
+sod_metadata <- p450_raw %>%
+  select(sample_id, site_name, site_number, reporting_area, latitude, longitude) %>%
+  inner_join(sod_raw %>% select(sample_id, site_name, site_number,
+                                reporting_area, latitude, longitude),
+             by = "sample_id", suffix = c("_p450", "_sod")) %>%
+  mutate(name_mismatch = site_name_p450 != site_name_sod,
+         site_mismatch = site_number_p450 != site_number_sod,
+         area_mismatch = reporting_area_p450 != reporting_area_sod,
+         coordinate_mismatch = abs(latitude_p450 - latitude_sod) > 0.000001 |
+           abs(longitude_p450 - longitude_sod) > 0.000001)
+
+sod_metadata %>% summarise(name_mismatch = sum(name_mismatch),
+                           site_mismatch = sum(site_mismatch),
+                           area_mismatch = sum(area_mismatch),
+                           coordinate_mismatch = sum(coordinate_mismatch))
+
+direct_metadata <- p450_raw %>%
+  select(sample_id, site_name, site_number, reporting_area, latitude, longitude) %>%
+  inner_join(direct_raw %>% select(sample_id, site_name, site_number,
+                                   reporting_area, latitude, longitude),
+             by = "sample_id", suffix = c("_p450", "_direct")) %>%
+  mutate(name_mismatch = site_name_p450 != site_name_direct,
+         site_mismatch = site_number_p450 != site_number_direct,
+         area_mismatch = reporting_area_p450 != reporting_area_direct,
+         coordinate_mismatch = abs(latitude_p450 - latitude_direct) > 0.000001 |
+           abs(longitude_p450 - longitude_direct) > 0.000001)
+
+direct_metadata %>% summarise(name_mismatch = sum(name_mismatch),
+                              site_mismatch = sum(site_mismatch),
+                              area_mismatch = sum(area_mismatch),
+                              coordinate_mismatch = sum(coordinate_mismatch))
+
+direct_name_disagreements <- direct_metadata %>%
+  filter(name_mismatch | site_mismatch | area_mismatch | coordinate_mismatch)
+direct_name_disagreements %>%
+  select(sample_id, site_number_p450, site_name_p450, site_name_direct,
+         name_mismatch, site_mismatch, area_mismatch, coordinate_mismatch) %>%
+  distinct() %>% head(50)
+
+derived_metadata <- p450_raw %>%
+  select(sample_id, site_name, site_number, reporting_area, latitude, longitude) %>%
+  inner_join(derived_raw %>% select(sample_id, site_name, site_number,
+                                    reporting_area, latitude, longitude),
+             by = "sample_id", suffix = c("_p450", "_derived")) %>%
+  mutate(name_mismatch = site_name_p450 != site_name_derived,
+         site_mismatch = site_number_p450 != site_number_derived,
+         area_mismatch = reporting_area_p450 != reporting_area_derived,
+         coordinate_mismatch = abs(latitude_p450 - latitude_derived) > 0.000001 |
+           abs(longitude_p450 - longitude_derived) > 0.000001)
+
+derived_metadata %>% summarise(name_mismatch = sum(name_mismatch),
+                               site_mismatch = sum(site_mismatch),
+                               area_mismatch = sum(area_mismatch),
+                               coordinate_mismatch = sum(coordinate_mismatch))
+```
+
+**Decision checkpoint:** Review site-name discrepancies before treating the P450 name as canonical. Site number and geography may be consistent while labels differ. A true discrepancy remains visible in the review export.
+
+# 8. Construct the combined dataset (no corrections)
+
+Join each source **by unique `sample_id`**. Preserve P450 metadata provisionally and append only the measured columns from the other three files. Do **not** use `distinct()` to conceal duplicate join results, and do not join by site alone (multiple mussels share a site).
+
+```{r}
+#| label: combine
+combined <- p450_raw %>%
+  left_join(sod_raw %>% select(sample_id, sod), by = "sample_id") %>%
+  left_join(direct_raw %>% select(sample_id, weight_initial, length, width,
+                                  height, weight_final, weight_change),
+            by = "sample_id") %>%
+  left_join(derived_raw %>% select(sample_id, shell, condition_index),
+            by = "sample_id")
+
+# Verify that a one-to-one join preserved the expected coverage.
+stopifnot(nrow(combined) == nrow(p450_raw),
+          n_distinct(combined$sample_id) == nrow(combined))
+
+# Attach review flags, but not transformed measurements.
+combined_review <- combined %>%
+  left_join(direct_metadata %>% select(sample_id, name_mismatch,
+                                        site_mismatch, area_mismatch, coordinate_mismatch) %>%
+              rename(direct_name_mismatch = name_mismatch,
+                     direct_site_mismatch = site_mismatch,
+                     direct_area_mismatch = area_mismatch,
+                     direct_coordinate_mismatch = coordinate_mismatch), by = "sample_id") %>%
+  mutate(p450_zero_flag = !is.na(p450) & p450 == 0,
+         sod_nonpositive_flag = !is.na(sod) & sod <= 0,
+         weight_difference_residual = weight_change - (weight_initial - weight_final),
+         weight_discrepancy_flag = !is.na(weight_difference_residual) &
+           abs(weight_difference_residual) > 0.02)
+
+combined_review %>% select(sample_id, site_number, p450, sod, shell,
+                           condition_index, p450_zero_flag, sod_nonpositive_flag,
+                           direct_name_mismatch, weight_discrepancy_flag) %>% head(10)
+```
+
+# 9. Combined dataset: a second exploratory assessment
+
+The purpose is not to repeat each plot for busywork. The combined file enables **cross-measurement**, **within-site**, and **between-site** questions that cannot be asked of the files independently.
+
+## 9.1 Check completeness and metric-level counts
+
+```{r}
+#| label: combined-long
+combined_long <- combined_review %>%
+  select(sample_id, site_number, reporting_area, p450, sod,
+         weight_initial, length, width, height, weight_final,
+         weight_change, shell, condition_index) %>%
+  pivot_longer(cols = c(p450, sod, weight_initial, length, width, height,
+                        weight_final, weight_change, shell, condition_index),
+               names_to = "metric", values_to = "value")
+
+combined_missingness <- combined_long %>%
+  group_by(metric) %>%
+  summarise(n_rows = n(), n_observed = sum(!is.na(value)),
+            n_missing = sum(is.na(value)),
+            pct_missing = 100 * mean(is.na(value)),
+            n_zero = sum(value == 0, na.rm = TRUE),
+            n_negative = sum(value < 0, na.rm = TRUE),
+            n_nonfinite = sum(!is.finite(value) & !is.na(value)),
+            .groups = "drop")
+combined_missingness
+
+combined_description <- combined_long %>%
+  group_by(metric) %>%
+  summarise(n = sum(!is.na(value)),
+            mean = mean(value, na.rm = TRUE), median = median(value, na.rm = TRUE),
+            sd = sd(value, na.rm = TRUE), variance = var(value, na.rm = TRUE),
+            q1 = quantile(value, .25, na.rm = TRUE),
+            q3 = quantile(value, .75, na.rm = TRUE),
+            iqr = IQR(value, na.rm = TRUE), mad_scaled = mad(value, na.rm = TRUE),
+            minimum = min(value, na.rm = TRUE), maximum = max(value, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(se = sd / sqrt(n),
+         ci95_low = mean - qt(.975, df = pmax(n - 1, 1)) * se,
+         ci95_high = mean + qt(.975, df = pmax(n - 1, 1)) * se,
+         cv_pct = if_else(n >= 2 & abs(mean) > 1e-8,
+                          100 * sd / abs(mean), NA_real_))
+combined_description
+```
+
+**Interpretation cautions:** This t-based CI treats individual records as independent and is descriptive only; organisms at the same site are not independent site replicates. CV is not necessarily informative for signed `weight_change`, near-zero means, or an index with an arbitrary zero. For all-missing metrics, investigate source import before interpreting minimum/maximum.
+
+## 9.2 Distribution checks: histogram, dots, Q–Q, boxplots
+
+```{r}
+#| label: combined-distributions
+#| fig-height: 10
+ggplot(combined_long, aes(value)) +
+  geom_histogram(bins = 25, fill = "steelblue", color = "white", na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free", ncol = 3) +
+  labs(title = "Combined data: all measurement distributions", x = "Value (different units)") +
+  theme_minimal()
+```
+
+```{r}
+#| label: combined-dots
+#| fig-height: 10
+ggplot(combined_long, aes(x = metric, y = value)) +
+  geom_jitter(width = .16, alpha = .45, size = 1, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Individual points: visible extreme values", x = NULL, y = "Value") +
+  theme_minimal() + theme(axis.text.x = element_blank())
+```
+
+```{r}
+#| label: combined-qq
+#| fig-height: 10
+ggplot(combined_long, aes(sample = value)) +
+  stat_qq(na.rm = TRUE) + stat_qq_line(na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free", ncol = 3) +
+  labs(title = "Q–Q plots are diagnostics, not automatic pass/fail tests") + theme_minimal()
+```
+
+## 9.3 Outlier screens: IQR, ordinary z, robust z
+
+**Flag for inspection, never delete automatically.** The scaled `mad()` is on a scale comparable to SD under normality; a zero MAD yields no robust z score.
+
+```{r}
+#| label: outlier-screen
+outlier_long <- combined_long %>%
+  left_join(combined_description %>%
+              select(metric, mean, median, sd, q1, q3, iqr, mad_scaled),
+            by = "metric") %>%
+  mutate(iqr_low = q1 - 1.5 * iqr,
+         iqr_high = q3 + 1.5 * iqr,
+         iqr_flag = !is.na(value) & (value < iqr_low | value > iqr_high),
+         z_score = if_else(!is.na(sd) & sd > 0, (value - mean) / sd, NA_real_),
+         z_flag = !is.na(z_score) & abs(z_score) > 3,
+         robust_z = if_else(!is.na(mad_scaled) & mad_scaled > 0,
+                            (value - median) / mad_scaled, NA_real_),
+         robust_flag = !is.na(robust_z) & abs(robust_z) > 3.5,
+         any_outlier_flag = iqr_flag | z_flag | robust_flag)
+
+outlier_counts <- outlier_long %>%
+  group_by(metric) %>%
+  summarise(n_iqr = sum(iqr_flag), n_z = sum(z_flag),
+            n_robust = sum(robust_flag), n_any = sum(any_outlier_flag),
+            .groups = "drop")
+outlier_counts
+
+outlier_records <- outlier_long %>%
+  filter(any_outlier_flag) %>%
+  select(sample_id, site_number, reporting_area, metric, value,
+         iqr_flag, z_flag, robust_flag, z_score, robust_z)
+head(outlier_records, 40)
+```
+
+## 9.4 Site-level replication and missingness
+
+```{r}
+#| label: site-audit
+site_replication <- combined_review %>%
+  group_by(site_number, reporting_area, site_name) %>%
+  summarise(n_rows = n(), n_mussels = n_distinct(sample_id), .groups = "drop")
+site_replication
+
+ggplot(site_replication, aes(x = n_mussels)) +
+  geom_bar(fill = "grey55") +
+  labs(title = "Organisms per site", x = "Mussels at site", y = "Number of sites") +
+  theme_minimal()
+
+site_metric_summary <- combined_long %>%
+  group_by(site_number, reporting_area, metric) %>%
+  summarise(n_total = n(), n_observed = sum(!is.na(value)),
+            n_missing = sum(is.na(value)),
+            site_mean = if (all(is.na(value))) NA_real_ else mean(value, na.rm = TRUE),
+            site_median = if (all(is.na(value))) NA_real_ else median(value, na.rm = TRUE),
+            site_sd = sd(value, na.rm = TRUE),
+            site_mad = if (all(is.na(value))) NA_real_ else mad(value, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(site_se = site_sd / sqrt(n_observed),
+         site_ci95_low = if_else(n_observed >= 2,
+           site_mean - qt(.975, df = pmax(n_observed - 1, 1)) * site_se, NA_real_),
+         site_ci95_high = if_else(n_observed >= 2,
+           site_mean + qt(.975, df = pmax(n_observed - 1, 1)) * site_se, NA_real_))
+site_metric_summary
+```
+
+```{r}
+#| label: within-site-plot
+#| fig-height: 10
+# Display-only subset: retain full dataset for analysis.
+sites_for_plot <- site_replication %>% arrange(desc(n_mussels), site_number) %>%
+  slice_head(n = 12) %>% pull(site_number)
+
+combined_long %>% filter(site_number %in% sites_for_plot) %>%
+  ggplot(aes(x = factor(site_number), y = value)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey85", na.rm = TRUE) +
+  geom_jitter(width = .15, alpha = .6, size = .7, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Within-site spread (12 sites shown)", x = "Site number", y = "Value") +
+  theme_minimal() + theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+
+```{r}
+#| label: site-mean-plot
+#| fig-height: 11
+ggplot(site_metric_summary, aes(x = reorder(factor(site_number), site_mean), y = site_mean)) +
+  geom_point(na.rm = TRUE) + coord_flip() +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Between-site distribution: each point is one site mean",
+       x = "Site number", y = "Mean") + theme_minimal() +
+  theme(axis.text.y = element_text(size = 5))
+```
+
+## 9.5 Reporting areas as a *secondary* grouping
+
+Summarize **site means**, not pooled individuals, when describing patterns across reporting areas.
+
+```{r}
+#| label: area-level
+area_metric_summary <- site_metric_summary %>%
+  group_by(reporting_area, metric) %>%
+  summarise(n_sites = sum(!is.na(site_mean)),
+            area_mean_of_site_means = if (all(is.na(site_mean))) NA_real_ else
+              mean(site_mean, na.rm = TRUE),
+            between_site_sd = sd(site_mean, na.rm = TRUE),
+            .groups = "drop")
+area_metric_summary
+
+ggplot(site_metric_summary, aes(x = factor(reporting_area), y = site_mean)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey85", na.rm = TRUE) +
+  geom_jitter(width = .13, alpha = .55, size = .8, na.rm = TRUE) +
+  facet_wrap(~metric, scales = "free_y", ncol = 3) +
+  labs(title = "Site means by reporting area", x = "Reporting area", y = "Site mean") +
+  theme_minimal()
+```
+
+## 9.6 Bivariate and multivariate exploratory checks
+
+Covariation is not necessarily causation; condition index and size measurements can be mathematically dependent. Scatterplots of organisms illustrate within-site relationships; correlation of site means addresses a different question.
+
+```{r}
+#| label: bivariate
+#| fig-height: 5
+ggplot(combined_review, aes(x = length, y = shell)) +
+  geom_point(alpha = .6, na.rm = TRUE) +
+  labs(title = "Individual mussels: length versus shell", x = "Length (verify units)", y = "Shell") +
+  theme_minimal()
+
+ggplot(combined_review, aes(x = p450, y = sod)) +
+  geom_point(alpha = .6, na.rm = TRUE) +
+  labs(title = "Individual mussels: P450 versus SOD", x = "P450", y = "SOD") +
+  theme_minimal()
+```
+
+```{r}
+#| label: site-correlations
+# Choose five variables deliberately to keep the matrix readable.
+site_wide <- site_metric_summary %>%
+  select(site_number, reporting_area, metric, site_mean) %>%
+  pivot_wider(names_from = metric, values_from = site_mean)
+
+cor_data <- site_wide %>% select(p450, sod, shell, length, condition_index)
+
+# Base R: pairs, Pearson, Spearman and pairwise complete-case counts.
+pairs(cor_data, main = "Pairwise scatterplots of site means", pch = 19, cex = .4)
+pearson_cor <- cor(cor_data, use = "pairwise.complete.obs", method = "pearson")
+spearman_cor <- cor(cor_data, use = "pairwise.complete.obs", method = "spearman")
+observed <- !is.na(as.matrix(cor_data))
+paired_n <- t(observed) %*% observed
+round(pearson_cor, 2)
+round(spearman_cor, 2)
+paired_n
+```
+
+**Optional advanced extension (after basics):** principal component analysis with `prcomp()` on standardized, complete site-level measurements; show retained-site counts and explain why correlated size variables can dominate a PCA. PCA is intentionally not automated in this introductory report.
+
+# 10. Prepare the assessment outputs and the cleaning handoff
+
+**Important:** `combined_review` has all source values unchanged, plus review flags; it is **EDA-assessed**, not cleaned or validated. `weight_difference_residual` is an audit quantity, not an adjusted weight. A name discrepancy is not permission to overwrite it. The raw data files remain untouched.
+
+```{r}
+#| label: export
+write_csv(combined_review, file.path(out_dir, "00_combined_EDA_ASSESSED_UNCLEANED.csv"), na = "")
+write_csv(source_counts, file.path(out_dir, "01_source_row_and_key_counts.csv"))
+write_csv(combined_missingness, file.path(out_dir, "02_combined_missingness.csv"))
+write_csv(combined_description, file.path(out_dir, "03_combined_descriptive_statistics.csv"))
+write_csv(outlier_counts, file.path(out_dir, "04_outlier_counts_REVIEW.csv"))
+write_csv(outlier_records, file.path(out_dir, "05_outlier_records_REVIEW.csv"))
+write_csv(direct_name_disagreements, file.path(out_dir, "06_metadata_disagreements_REVIEW.csv"))
+write_csv(direct_review %>%
+            filter(weight_discrepancy_flag | size_nonpositive_flag | mass_nonpositive_flag),
+          file.path(out_dir, "07_direct_morphometrics_REVIEW.csv"))
+write_csv(site_replication, file.path(out_dir, "08_site_replication.csv"))
+write_csv(site_metric_summary, file.path(out_dir, "09_site_metric_summary.csv"))
+write_csv(area_metric_summary, file.path(out_dir, "10_area_metric_summary.csv"))
+
+# Empty decision log template; write decisions here only after checking methods.
+cleaning_decisions <- tibble(
+  sample_id = integer(), variable = character(), issue = character(),
+  source_checked = character(), decision = character(), rationale = character(),
+  reviewer = character(), review_date = character()
+)
+write_csv(cleaning_decisions, file.path(out_dir, "11_cleaning_decision_log_TEMPLATE.csv"))
+
+cat("Wrote outputs to: ", normalizePath(out_dir), "\n")
+```
+
+# 11. Student reflection and QC decision checkpoint
+
+| Question | Student response |
+|---|---|
+| What was the observational unit in every raw source? | *Write here* |
+| Did all four sources contain identical sample IDs? Did any include duplicates? | *Write here* |
+| How do nonpositive SOD and zero P450 differ from missing data? | *Write here* |
+| Which source has site-name discrepancies, and how would you verify the authoritative name? | *Write here* |
+| What does the `weight_change` residual reveal? What tolerance is scientifically justified? | *Write here* |
+| Which metrics have skew, high CV, or large mean–median differences? | *Write here* |
+| What is flagged by IQR versus z-score versus robust z-score? | *Write here* |
+| How does within-site variation compare with the spread of site means? | *Write here* |
+| Which correlations might be explained by body size or derived formulas? | *Write here* |
+| Which cleaning decisions require laboratory records or methodological information? | *Write here* |
+
+**Cleaning phase (separate script):** decide how to handle nonpositive assay results, site-name conflicts, arithmetic discrepancies, assay limits, and statistically flagged extremes. Record one decision per issue; retain raw columns and a reproducible transformation history. Only after that produce a separately named `CLEANED` file.
+
+# 12. Reproducibility
+
+```{r}
+#| label: session
+cat("P450 source:", normalizePath(p450_file), "\n")
+cat("SOD source:", normalizePath(sod_file), "\n")
+cat("Direct source:", normalizePath(direct_file), "\n")
+cat("Derived source:", normalizePath(derived_file), "\n")
+cat("Report run:", format(Sys.time(), "%Y-%m-%d %H:%M:%S %Z"), "\n")
+sessionInfo()
+```
