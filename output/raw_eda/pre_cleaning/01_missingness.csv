@@ -1,0 +1,11 @@
+metric,n_total,n_observed,n_missing,pct_missing,n_zero,n_negative,n_nonfinite
+condition_index,312,312,0,0,0,0,0
+height,312,312,0,0,0,0,0
+length,312,312,0,0,0,0,0
+p450,312,312,0,0,0,0,0
+shell,312,312,0,0,0,0,0
+sod,312,312,0,0,2,48,0
+weight_change,312,312,0,0,0,0,0
+weight_final,312,312,0,0,0,0,0
+weight_initial,312,312,0,0,0,0,0
+width,312,312,0,0,0,0,0

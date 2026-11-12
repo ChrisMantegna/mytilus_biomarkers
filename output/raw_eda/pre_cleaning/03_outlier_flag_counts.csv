@@ -1,0 +1,11 @@
+metric,n_iqr,n_z,n_robust,n_any
+condition_index,24,7,13,24
+height,5,3,3,5
+length,2,2,0,2
+p450,12,4,8,12
+shell,3,2,0,3
+sod,20,6,20,20
+weight_change,1,1,1,1
+weight_final,1,1,1,1
+weight_initial,1,1,0,1
+width,12,3,3,12

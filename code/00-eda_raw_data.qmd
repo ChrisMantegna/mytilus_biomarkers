@@ -39,6 +39,9 @@ run_label <- "pre_cleaning"
 stopifnot(file.exists(input_file))
 output_dir <- file.path("../output/raw_eda", run_label)
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+figures_dir <- file.path(output_dir, "../output/raw_eda_figures")
+dir.create(figures_dir, showWarnings = FALSE, recursive = TRUE)
+
 
 # Shared definitions for a fair pre/post comparison.
 metric_names <- c("p450", "sod", "shell", "condition_index",
@@ -131,31 +134,37 @@ metric_summary
 ```{r}
 #| label: histograms
 #| fig-height: 10
-ggplot(long_data, aes(x = value)) +
+plot_histograms <- ggplot(long_data, aes(x = value)) +
   geom_histogram(bins = 25, fill = "steelblue", color = "white", na.rm = TRUE) +
   facet_wrap(~metric, scales = "free", ncol = 3) +
   labs(title = "Sample-level histograms", x = "Measurement (unit differs by panel)", y = "Count") +
   theme_minimal()
+
+plot_histograms
 ```
 
 ```{r}
 #| label: observations
 #| fig-height: 10
-ggplot(long_data, aes(x = metric, y = value)) +
+plot_observations<- ggplot(long_data, aes(x = metric, y = value)) +
   geom_jitter(width = 0.2, size = 0.8, alpha = 0.4, na.rm = TRUE) +
   facet_wrap(~metric, scales = "free_y", ncol = 3) +
   labs(title = "Individual observations", x = NULL, y = "Value") +
   theme_minimal() + theme(axis.text.x = element_blank())
+plot_observations
+
 ```
 
 ```{r}
 #| label: boxplots
 #| fig-height: 10
-ggplot(long_data, aes(x = metric, y = value)) +
+plot_boxplots<- ggplot(long_data, aes(x = metric, y = value)) +
   geom_boxplot(outlier.color = "firebrick", na.rm = TRUE) +
   facet_wrap(~metric, scales = "free_y", ncol = 3) +
   labs(title = "Boxplots show potential extremes, not errors", x = NULL, y = "Value") +
   theme_minimal() + theme(axis.text.x = element_blank())
+plot_boxplots
+
 ```
 
 ## Q–Q plots and normality
@@ -165,10 +174,12 @@ Normality of the **raw marginal measurements** is not a prerequisite for every a
 ```{r}
 #| label: qq
 #| fig-height: 10
-ggplot(long_data, aes(sample = value)) +
+plot_qq<- ggplot(long_data, aes(sample = value)) +
   stat_qq(na.rm = TRUE) + stat_qq_line(na.rm = TRUE) +
   facet_wrap(~metric, scales = "free", ncol = 3) +
   labs(title = "Sample-level Q–Q diagnostics") + theme_minimal()
+plot_qq
+
 ```
 
 ```{r}
@@ -181,7 +192,7 @@ shapiro.test(data$condition_index[is.finite(data$condition_index)])
 shapiro.test(data$shell[is.finite(data$shell)])
 ```
 
-# 6. Outlier screens (retain every observation)
+# Outlier screens (retain every observation)
 
 Use *three different descriptions of extreme observations*: Tukey's 1.5 × IQR fence, a conventional z-score, and a median/MAD-based robust score. Flags can disagree. They do not justify deletion by themselves. In the long table, the same sample can be flagged for different measurements; investigate the specific sample × metric combination.
 
@@ -219,7 +230,7 @@ flagged_observations
 
 **Discussion:** Do extremes cluster within a site? Could they reflect organism size, a local stressor, assay detection limits, transcription errors, or something else? Check methods and records before making decisions. Comparing all individual mussels against one pooled distribution may flag genuine *between-site* variation as extreme.
 
-# 7. Site-level EDA: replication and summaries
+# Site-level EDA: replication and summaries
 
 Site is the primary grouping unit here; reporting area is a secondary spatial grouping. Use site **number** as the stable grouping key. Grouped means are descriptive and do not replace sample-level records.
 
@@ -230,10 +241,12 @@ site_replication <- data %>%
   summarise(n_mussels = n(), .groups = "drop")
 site_replication
 
-ggplot(site_replication, aes(x = n_mussels)) +
+plot_site_replication<- ggplot(site_replication, aes(x = n_mussels)) +
   geom_bar(fill = "steelblue") +
   labs(title = "Mussels sampled per site", x = "Number of mussels", y = "Number of sites") +
   theme_minimal()
+plot_site_replication
+
 ```
 
 ```{r}
@@ -252,7 +265,7 @@ site_summary
 ```{r}
 #| label: within-site
 #| fig-height: 8
-long_data %>%
+plot_within_site <- long_data %>%
   filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
   ggplot(aes(x = factor(site_number), y = value)) +
   geom_boxplot(outlier.shape = NA, na.rm = TRUE) +
@@ -261,21 +274,26 @@ long_data %>%
   labs(title = "Within-site distributions: selected metrics", x = "Site number", y = "Value") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, size = 5))
+
+plot_within_site
 ```
+
 
 ```{r}
 #| label: ranked-sites
 #| fig-height: 8
-site_summary %>%
+plot_ranked_sites <- site_summary %>%
   filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
   ggplot(aes(x = reorder(site_number, mean), y = mean)) +
   geom_point(size = 1.2) + coord_flip() +
   facet_wrap(~metric, scales = "free_y", ncol = 2) +
   labs(title = "Site-level metric means (common site order across panels)", x = "Site", y = "Site mean") +
   theme_minimal() + theme(axis.text.y = element_text(size = 5))
+
+plot_ranked_sites
 ```
 
-# 8. Reporting-area exploration (secondary grouping)
+# Reporting-area exploration (secondary grouping)
 
 Each reporting area contains multiple sites. The area-level summary below treats **site means** as its observations (not each mussel), to avoid giving extra statistical weight to sites with more mussels.
 
@@ -291,9 +309,20 @@ area_summary
 ```
 
 ```{r}
+#| label: area-summary
+area_summary <- site_summary %>%
+  group_by(reporting_area, metric) %>%
+  summarise(n_sites = n(), mean_of_site_means = mean(mean, na.rm = TRUE),
+            median_of_site_means = median(mean, na.rm = TRUE),
+            sd_between_sites = sd(mean, na.rm = TRUE),
+            .groups = "drop")
+area_summary
+```
+
+```{r}
 #| label: area-plot
 #| fig-height: 9
-site_summary %>%
+plot_area <- site_summary %>%
   filter(metric %in% c("p450", "sod", "shell", "condition_index")) %>%
   ggplot(aes(x = factor(reporting_area), y = mean)) +
   geom_boxplot(outlier.shape = NA, na.rm = TRUE) +
@@ -301,24 +330,30 @@ site_summary %>%
   facet_wrap(~metric, scales = "free_y", ncol = 2) +
   labs(title = "Between-site variation within reporting areas", x = "Reporting area", y = "Site mean") +
   theme_minimal()
+
+plot_area
 ```
 
-# 9. Bivariate and multivariate exploration
+
+# Bivariate and multivariate exploration
 
 Use sample-level scatterplots to inspect organism-level relationships, and site means for an exploratory cross-site matrix. Correlations are not causal evidence; their interpretation changes with the unit of analysis. PCA, PERMANOVA and post-hoc significance testing are **deferred to the later analysis module**, after cleaning choices and a research question are established.
 
 ```{r}
 #| label: scatterplots
-ggplot(data, aes(x = length, y = shell)) +
+plot_length_shell<- ggplot(data, aes(x = length, y = shell)) +
   geom_point(alpha = 0.55) +
   geom_smooth(method = "lm", se = TRUE, na.rm = TRUE) +
   labs(title = "Sample-level shell length vs thickness", x = "Length", y = "Shell thickness") +
   theme_minimal()
+plot_length_shell
 
-ggplot(data, aes(x = p450, y = sod)) +
+plot_p450_sod<- ggplot(data, aes(x = p450, y = sod)) +
   geom_point(alpha = 0.55) +
   labs(title = "Sample-level biomarker comparison", x = "P450", y = "SOD") +
   theme_minimal()
+plot_p450_sod
+
 ```
 
 ```{r}
@@ -336,7 +371,7 @@ cor(site_pairs, method = "pearson", use = "pairwise.complete.obs")
 cor(site_pairs, method = "spearman", use = "pairwise.complete.obs")
 ```
 
-# 10. Optional transformation *diagnostics* (do not replace raw values)
+# Optional transformation *diagnostics* (do not replace raw values)
 
 Examine whether a transformation may make a distribution more interpretable, without quietly making it permanent. **Log transforms require strictly positive values.** The original SOD data may contain nonpositive observations; leave those as missing **in this diagnostic column only**. Whether a nonpositive value is a meaningful observation, below LOD, or an artifact is decided separately. A log1p transform is not a neutral substitute for analytical rules.
 
@@ -347,7 +382,7 @@ transform_preview <- data %>%
          sod_log10_preview = if_else(sod > 0, log10(sod), NA_real_))
 
 #| fig-height: 7
-transform_preview %>%
+plot_transform_preview <- transform_preview %>%
   select(p450, p450_log10_preview, sod, sod_log10_preview) %>%
   pivot_longer(everything(), names_to = "metric", values_to = "value") %>%
   ggplot(aes(x = value)) +
@@ -355,9 +390,12 @@ transform_preview %>%
   facet_wrap(~metric, scales = "free") +
   labs(title = "Raw versus log10 diagnostic distributions", x = "Value") +
   theme_minimal()
+
+plot_transform_preview
 ```
 
-# 11. Export outputs for comparison and decisions
+
+## Export tables
 
 The EDA **does not write a cleaned dataset**. It exports diagnostics, selected site-level summaries, and a copy of the input data labeled with this run. After a separate cleaning script creates a cleaned CSV, rerun this document under `post_cleaning`. Keep both report outputs and compare counts, distributions and site-level patterns before moving to inference.
 
@@ -373,20 +411,52 @@ write_csv(site_summary, file.path(output_dir, "06_site_metric_summary.csv"))
 write_csv(area_summary, file.path(output_dir, "07_area_metric_summary.csv"))
 ```
 
-# 12. Student interpretation and decisions to carry forward
+## Export EDA figures
 
-Answer in the lab notebook before any cleaning actions:
+Each plotting section above assigns its figure to a named object **and displays it in the rendered report**. This export block collects those same figures without rebuilding or altering them. Pre- and post-cleaning runs get separate folders: `eda_output/pre_cleaning/raw_eda_figures` and `eda_output/post_cleaning/raw_eda_figures`. The image files are PNGs, suitable for comparing both runs.
 
-1. Which metrics are skewed or multimodal? Are patterns shared across sites?
-2. Are zeros and negative values expected by the assay and biological sign conventions?
-3. Which observations are flagged by IQR but not MAD (or vice versa)? What original records would you check?
-4. What differences emerge between the sample-level and site-level pictures?
-5. Would any transformation help a *specific downstream model*, or merely change the appearance of the plot?
-6. Which candidate cleaning rule could change site rankings, site-level variance, or the number of complete-case observations?
-7. What would count as evidence that cleaning was beneficial rather than simply making a figure look tidier?
+```{r}
+#| label: export-figures
+#| include: true
+#| fig-show: hide
+# 1. Sample-level plots
+ggsave(file.path(figures_dir, "01_sample_histograms.png"),
+       plot = plot_histograms, width = 12, height = 10, dpi = 300)
+ggsave(file.path(figures_dir, "02_individual_observations.png"),
+       plot = plot_observations, width = 12, height = 10, dpi = 300)
+ggsave(file.path(figures_dir, "03_sample_boxplots.png"),
+       plot = plot_boxplots, width = 12, height = 10, dpi = 300)
+ggsave(file.path(figures_dir, "04_sample_qq_plots.png"),
+       plot = plot_qq, width = 12, height = 10, dpi = 300)
 
-**Documentation standard:** log sample ID, metric, original value, reason for review, evidence checked, proposed treatment, who approved the decision, and the resulting value; include excluded records in the log. Keep **an unchanged raw CSV** and a **new cleaned CSV** with a version/date. For pre/post comparisons, hold the definitions and visual choices constant.
+# 2. Grouped (site and reporting area) plots
+ggsave(file.path(figures_dir, "05_site_replication.png"),
+       plot = plot_site_replication, width = 9, height = 6, dpi = 300)
+ggsave(file.path(figures_dir, "06_within_site_distributions.png"),
+       plot = plot_within_site, width = 15, height = 9, dpi = 300)
+ggsave(file.path(figures_dir, "07_ranked_site_means.png"),
+       plot = plot_ranked_sites, width = 12, height = 9, dpi = 300)
+ggsave(file.path(figures_dir, "08_reporting_area.png"),
+       plot = plot_area, width = 12, height = 9, dpi = 300)
 
+# 3. Relationships and transformation previews
+ggsave(file.path(figures_dir, "09_length_vs_shell.png"),
+       plot = plot_length_shell, width = 9, height = 7, dpi = 300)
+ggsave(file.path(figures_dir, "10_p450_vs_sod.png"),
+       plot = plot_p450_sod, width = 9, height = 7, dpi = 300)
+ggsave(file.path(figures_dir, "12_transformation_previews.png"),
+       plot = plot_transform_preview, width = 11, height = 7, dpi = 300)
+
+# The scatterplot matrix is a base R plot, so use a PNG device
+# instead of ggsave(). Always close the device with dev.off().
+png(filename = file.path(figures_dir, "11_site_mean_scatterplot_matrix.png"),
+    width = 2400, height = 2400, res = 250)
+pairs(site_pairs, main = "Site-mean scatterplot matrix", pch = 19, cex = 0.5)
+dev.off()
+
+# Confirm what was written.
+list.files(figures_dir, pattern = "[.]png$")
+```
 ## Comparison checklist after post-cleaning EDA
 
 Compare the pre/post `01_missingness.csv`, `02_metric_descriptives.csv`, `03_outlier_flag_counts.csv`, `05_site_replication.csv`, and `06_site_metric_summary.csv`. A change in sample size may be appropriate, but must be explained. Do not read a higher Shapiro p-value or fewer flagged records as independent evidence that cleaning was correct.

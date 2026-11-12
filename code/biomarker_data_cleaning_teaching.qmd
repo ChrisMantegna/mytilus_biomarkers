@@ -1,0 +1,273 @@
+---
+title: "Mussel biomarkers | documented data cleaning"
+subtitle: "Companion to the combined pre/post EDA report"
+author: "Undergraduate teaching workflow"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: false
+    code-tools: true
+    embed-resources: true
+execute:
+  echo: true
+  warning: true
+  message: false
+  error: false
+editor: source
+---
+
+# Purpose and boundaries
+
+This module sits **between** the first EDA and the second EDA. The source-file checklist already considered metadata, joins, and calculations. The **pre-cleaning EDA** identified patterns and observations that merit review. This document records choices, applies **only approved rules**, and exports a distinct sample-level cleaned file and a descriptive site-level table. Rerun the *same EDA* on the resulting sample-level file to measure the effects of those choices.
+
+This is a teaching script: **no custom functions, loops, `lapply`, `sapply`, `purrr`, or `across()`**. Every rule appears explicitly. Do not remove statistical outliers automatically, and do not change a measurement merely because it is negative or unusual.
+
+**Important distinction:** the original cleaning script substituted `0.0025` for nonpositive SOD observations and described this as half the detection limit (`LOD = 0.05`). Those numbers are not consistent: half of `0.05` is `0.025`, not `0.0025`. The assay documentation and units must be checked before choosing *any* substitution. No such replacement runs by default in this version.
+
+# 1. Setup and output folders
+
+Place this document and `03-all_metrics_sample-level.csv` in the same working directory, or adjust `input_file` to its actual relative path. Keep your original source CSV unchanged.
+
+```{r}
+#| label: setup
+library(tidyverse)
+
+input_file <- "03-all_metrics_sample-level.csv"
+output_dir <- file.path("cleaning_output", "v01")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+# IMPORTANT: All alteration switches are OFF until supported by the decision log.
+replace_nonpositive_p450_with_na <- FALSE
+replace_nonpositive_sod_with_loq <- FALSE
+
+# Do not set the value below without checking the actual assay LOD / LOQ,
+# original units, and whether this substitution is justified.
+sod_replacement_value <- NA_real_
+
+# Use these flags only after a reviewer has approved the changes above.
+# Record the justification, affected sample IDs, and date in the decision log.
+```
+
+# 2. Read and preserve the original
+
+```{r}
+#| label: import
+raw_data <- read_csv(input_file, show_col_types = FALSE) %>%
+  mutate(sample_id = as.character(sample_id),
+         site_number = as.character(site_number),
+         reporting_area = as.character(reporting_area))
+
+required_columns <- c("sample_id", "site_number", "reporting_area", "p450", "sod",
+                      "shell", "condition_index", "weight_initial", "weight_final",
+                      "weight_change", "length", "width", "height")
+stopifnot(file.exists(input_file))
+stopifnot(all(required_columns %in% names(raw_data)))
+stopifnot(!anyDuplicated(raw_data$sample_id))
+
+# Do not edit raw_data. This separate object receives any approved changes.
+clean_data <- raw_data
+
+glimpse(raw_data)
+summary(raw_data)
+```
+
+# 3. Assemble a review queue (not a deletion list)
+
+The next table identifies cases the older cleaning script would have changed. It is **not** a decision about whether the original observation is invalid. Use source bench notes, kit guidance, detection limits, and existing EDA flags to resolve each case.
+
+```{r}
+#| label: review-queue
+review_queue <- raw_data %>%
+  select(sample_id, site_number, p450, sod) %>%
+  pivot_longer(cols = c(p450, sod), names_to = "metric", values_to = "original_value") %>%
+  filter(is.na(original_value) | original_value <= 0) %>%
+  mutate(issue_or_flag = case_when(
+    is.na(original_value) ~ "Original value is missing",
+    original_value == 0 ~ "Zero value: verify assay definition",
+    original_value < 0 ~ "Negative value: verify assay definition")) %>%
+  arrange(metric, site_number, sample_id)
+
+review_queue
+write_csv(review_queue, file.path(output_dir, "01_nonpositive_and_missing_REVIEW.csv"))
+```
+
+The old scripts also discuss condition index (CI). The **current** combined file contains only `condition_index`, not separate `ci1`, `ci2`, and `ci3`. Do not silently restore obsolete variable names or recalculate the index without its formula and source data.
+
+# 4. Document the decision *before* changing the data
+
+Use the separate cleaning-decision log template or create a new blank log. The review queue above is evidence for the log; it is not a substitute for explaining the rule and verifying the original records. The template is not overwritten when the report is rendered again.
+
+```{r}
+#| label: decision-log
+log_path <- file.path(output_dir, "02_cleaning_decision_log.csv")
+if (!file.exists(log_path)) {
+  decision_log <- tibble(sample_id = character(),
+                         site_number = character(),
+                         metric = character(),
+                         original_value = double(),
+                         issue_or_flag = character(),
+                         source_evidence = character(),
+                         decision = character(),
+                         reason = character(),
+                         approved_by = character(),
+                         new_value = double(),
+                         decision_date = character(),
+                         notes = character())
+  write_csv(decision_log, log_path)
+}
+```
+
+## 4.1 Decision questions
+
+1. Is the value observed, below a detection or quantification threshold, an error, or missing by design?
+2. Is the reported limit in the **same units** as the finalized normalized biomarker activity?
+3. Will the rule apply to every affected observation, or only specified sample IDs supported by lab records?
+4. How will missing values enter site means and later models?
+5. If an outlier is retained, how will the decision be explained? Retention can be the correct choice.
+
+# 5. Apply the approved P450 rule (optional)
+
+The historical script converted nonpositive P450 to missing. This may be appropriate for an invalid assay result, but **zero by itself does not prove invalidity**. If confirmed and approved, change the switch in Section 1; the code will document which values were altered.
+
+```{r}
+#| label: p450-decision
+if (replace_nonpositive_p450_with_na) {
+  clean_data <- clean_data %>%
+    mutate(p450 = if_else(!is.na(p450) & p450 <= 0, NA_real_, p450))
+}
+```
+
+# 6. Apply the approved SOD rule (optional)
+
+Do not run a replacement until the replacement value and its analytical basis are verified. A threshold expressed in concentration units may not be directly applicable to the *protein-normalized activity result* without knowing the assay calculation and definitions. The following guard prevents an unverified missing replacement value.
+
+```{r}
+#| label: sod-decision
+if (replace_nonpositive_sod_with_loq) {
+  stopifnot(is.finite(sod_replacement_value))
+  stopifnot(sod_replacement_value > 0)
+
+  clean_data <- clean_data %>%
+    mutate(sod = if_else(!is.na(sod) & sod <= 0,
+                         sod_replacement_value, sod))
+}
+```
+
+# 7. Example: correct an individual documented transcription error
+
+If a bench record proves that **one sample × metric** value was transcribed incorrectly, make the change explicitly below. Replace the placeholders with the *verified* values; keep this section commented out until then. Avoid automatically replacing every outlier.
+
+```{r}
+#| label: one-off-example
+# Example ONLY (do not run without source evidence and a log entry):
+# clean_data <- clean_data %>%
+#   mutate(shell = if_else(sample_id == "VERIFIED_SAMPLE_ID",
+#                          VERIFIED_SHELL_VALUE, shell))
+```
+
+# 8. Check the outcome of cleaning
+
+Compare **counts and original-versus-resulting values**, not merely the appearance of a plot. An altered, excluded, or retained observation must be traceable to a documented rule.
+
+```{r}
+#| label: audit-changes
+changes <- raw_data %>%
+  select(sample_id, site_number, p450, sod) %>%
+  pivot_longer(cols = c(p450, sod), names_to = "metric", values_to = "original_value") %>%
+  left_join(
+    clean_data %>%
+      select(sample_id, p450, sod) %>%
+      pivot_longer(cols = c(p450, sod), names_to = "metric", values_to = "new_value"),
+    by = c("sample_id", "metric")) %>%
+  mutate(changed = (is.na(original_value) != is.na(new_value)) |
+           (!is.na(original_value) & !is.na(new_value) & original_value != new_value)) %>%
+  filter(changed) %>%
+  arrange(metric, sample_id)
+
+changes
+nrow(changes)
+
+comparison <- bind_rows(
+  raw_data %>%
+    summarise(version = "original", n_samples = n(), n_sites = n_distinct(site_number),
+              n_p450_missing = sum(is.na(p450)), n_sod_missing = sum(is.na(sod)),
+              n_p450_nonpositive = sum(p450 <= 0, na.rm = TRUE),
+              n_sod_nonpositive = sum(sod <= 0, na.rm = TRUE)),
+  clean_data %>%
+    summarise(version = "after_approved_rules", n_samples = n(), n_sites = n_distinct(site_number),
+              n_p450_missing = sum(is.na(p450)), n_sod_missing = sum(is.na(sod)),
+              n_p450_nonpositive = sum(p450 <= 0, na.rm = TRUE),
+              n_sod_nonpositive = sum(sod <= 0, na.rm = TRUE))
+)
+comparison
+```
+
+## 8.1 Keep sample and site identifiers intact
+
+```{r}
+#| label: final-identity-check
+stopifnot(nrow(clean_data) == nrow(raw_data))
+stopifnot(identical(clean_data$sample_id, raw_data$sample_id))
+stopifnot(identical(clean_data$site_number, raw_data$site_number))
+stopifnot(!anyDuplicated(clean_data$sample_id))
+```
+
+# 9. Create a descriptive site-level data table
+
+The old cleaning file averaged measurements at each site. Preserve this as a **separate derived table**, not a replacement for the sample-level file. Missing values are omitted *for each mean only*. When every value of a metric is missing at a site, the result should be `NA`, not `NaN`. The explicitly named fields make the operation transparent for beginning students.
+
+```{r}
+#| label: site-averages
+site_means <- clean_data %>%
+  group_by(site_number, site_name, reporting_area, latitude, longitude) %>%
+  summarise(
+    n_mussels = n(),
+    n_p450 = sum(!is.na(p450)),
+    n_sod = sum(!is.na(sod)),
+    p450 = if_else(n_p450 > 0, mean(p450, na.rm = TRUE), NA_real_),
+    sod = if_else(n_sod > 0, mean(sod, na.rm = TRUE), NA_real_),
+    shell = mean(shell, na.rm = TRUE),
+    condition_index = mean(condition_index, na.rm = TRUE),
+    weight_initial = mean(weight_initial, na.rm = TRUE),
+    weight_final = mean(weight_final, na.rm = TRUE),
+    weight_change = mean(weight_change, na.rm = TRUE),
+    length = mean(length, na.rm = TRUE),
+    width = mean(width, na.rm = TRUE),
+    height = mean(height, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+site_means
+```
+
+**Teaching note:** grouping on metadata fields assumes they are already reconciled by the separate source-file checklist. If a site splits into multiple rows because of inconsistent labels or coordinates, return to that checklist instead of treating the new rows as independent sites.
+
+# 10. Export versioned files
+
+This is the only place the cleaned dataset is exported. It writes a **new file**; it does not overwrite the input. Even if no rules are enabled, the result is a useful unchanged *baseline* for testing the teaching pipeline, but do not call it a cleaned analytical dataset until the decisions are completed.
+
+```{r}
+#| label: export
+write_csv(clean_data, file.path(output_dir, "04-all_metrics_sample-level_CLEANED.csv"),
+          na = "NA")
+write_csv(site_means, file.path(output_dir, "05-all_metrics_site-level_DESCRIPTIVE.csv"),
+          na = "NA")
+write_csv(changes, file.path(output_dir, "03_implemented_changes.csv"), na = "NA")
+write_csv(comparison, file.path(output_dir, "04_pre_post_rule_counts.csv"))
+
+list.files(output_dir)
+```
+
+# 11. Return to the same EDA report
+
+In `biomarker_combined_EDA_pre_post_WITH_FIGURES.qmd`, set:
+
+```r
+input_file <- "cleaning_output/v01/04-all_metrics_sample-level_CLEANED.csv"
+run_label <- "post_cleaning"
+```
+
+Compare pre/post distributions, completeness, flags, site means, and figure exports. If no rule has yet been approved, pre/post figures should agree; that is expected. Changes in distribution, a smaller number of flags, or a higher Shapiro–Wilk p-value do **not** independently demonstrate that cleaning was correct. Record any further decisions, revise the cleaning version if necessary, and repeat the comparison before statistical analysis.
