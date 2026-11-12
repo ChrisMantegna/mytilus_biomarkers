@@ -1,0 +1,3 @@
+version,n_samples,n_sites,n_p450_missing,n_sod_missing,n_p450_nonpositive,n_sod_nonpositive
+original,312,74,0,0,0,50
+after_approved_rules,312,74,0,0,0,0

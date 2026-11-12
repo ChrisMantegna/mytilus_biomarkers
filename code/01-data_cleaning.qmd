@@ -19,21 +19,19 @@ editor: source
 ---
 
 
-# 1. Setup and output folders
-
-Place this document and `03-all_metrics_sample-level.csv` in the same working directory, or adjust `input_file` to its actual relative path. Keep your original source CSV unchanged.
+# Identify file locations and load libraries
 
 ```{r}
 #| label: setup
 library(tidyverse)
 
-input_file <- "03-all_metrics_sample-level.csv"
-output_dir <- file.path("cleaning_output", "v01")
+input_file <- "../data/raw/03-all_metrics_sample-level.csv"
+output_dir <- file.path("../data/cleaned", "v01")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 # IMPORTANT: All alteration switches are OFF until supported by the decision log.
 replace_nonpositive_p450_with_na <- FALSE
-replace_nonpositive_sod_with_loq <- FALSE
+replace_nonpositive_sod_with_loq <- TRUE
 
 # Do not set the value below without checking the actual assay LOD / LOQ,
 # original units, and whether this substitution is justified.
@@ -84,7 +82,6 @@ review_queue
 write_csv(review_queue, file.path(output_dir, "01_nonpositive_and_missing_REVIEW.csv"))
 ```
 
-The old scripts also discuss condition index (CI). The **current** combined file contains only `condition_index`, not separate `ci1`, `ci2`, and `ci3`. Do not silently restore obsolete variable names or recalculate the index without its formula and source data.
 
 # 4. Document the decision *before* changing the data
 
