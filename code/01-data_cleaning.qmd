@@ -1,7 +1,6 @@
 ---
-title: "Mussel biomarkers | documented data cleaning"
-subtitle: "Companion to the combined pre/post EDA report"
-author: "Undergraduate teaching workflow"
+title: "Measured metric data cleaning"
+author: "CM"
 date: today
 format:
   html:
@@ -19,13 +18,6 @@ execute:
 editor: source
 ---
 
-# Purpose and boundaries
-
-This module sits **between** the first EDA and the second EDA. The source-file checklist already considered metadata, joins, and calculations. The **pre-cleaning EDA** identified patterns and observations that merit review. This document records choices, applies **only approved rules**, and exports a distinct sample-level cleaned file and a descriptive site-level table. Rerun the *same EDA* on the resulting sample-level file to measure the effects of those choices.
-
-This is a teaching script: **no custom functions, loops, `lapply`, `sapply`, `purrr`, or `across()`**. Every rule appears explicitly. Do not remove statistical outliers automatically, and do not change a measurement merely because it is negative or unusual.
-
-**Important distinction:** the original cleaning script substituted `0.0025` for nonpositive SOD observations and described this as half the detection limit (`LOD = 0.05`). Those numbers are not consistent: half of `0.05` is `0.025`, not `0.0025`. The assay documentation and units must be checked before choosing *any* substitution. No such replacement runs by default in this version.
 
 # 1. Setup and output folders
 
@@ -45,10 +37,8 @@ replace_nonpositive_sod_with_loq <- FALSE
 
 # Do not set the value below without checking the actual assay LOD / LOQ,
 # original units, and whether this substitution is justified.
-sod_replacement_value <- NA_real_
+sod_replacement_value <- 0.025
 
-# Use these flags only after a reviewer has approved the changes above.
-# Record the justification, affected sample IDs, and date in the decision log.
 ```
 
 # 2. Read and preserve the original
