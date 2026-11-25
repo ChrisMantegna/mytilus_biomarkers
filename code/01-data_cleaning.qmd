@@ -39,7 +39,12 @@ sod_replacement_value <- 0.025
 
 ```
 
-# 2. Read and preserve the original
+# Read and preserve the original
+## Data Format
+P450 & SOD Activity (Unit / mg"^"-1"~"protein)
+Shell Thickness - mm
+Weight - g
+CI - unitless
 
 ```{r}
 #| label: import
@@ -62,7 +67,7 @@ glimpse(raw_data)
 summary(raw_data)
 ```
 
-# 3. Assemble a review queue (not a deletion list)
+# Assemble a review queue (not a deletion list)
 
 The next table identifies cases the older cleaning script would have changed. It is **not** a decision about whether the original observation is invalid. Use source bench notes, kit guidance, detection limits, and existing EDA flags to resolve each case.
 
@@ -83,7 +88,7 @@ write_csv(review_queue, file.path(output_dir, "01_nonpositive_and_missing_REVIEW
 ```
 
 
-# 4. Document the decision *before* changing the data
+# Document the decision *before* changing the data
 
 Use the separate cleaning-decision log template or create a new blank log. The review queue above is evidence for the log; it is not a substitute for explaining the rule and verifying the original records. The template is not overwritten when the report is rendered again.
 
@@ -107,17 +112,6 @@ if (!file.exists(log_path)) {
 }
 ```
 
-## 4.1 Decision questions
-
-1. Is the value observed, below a detection or quantification threshold, an error, or missing by design?
-2. Is the reported limit in the **same units** as the finalized normalized biomarker activity?
-3. Will the rule apply to every affected observation, or only specified sample IDs supported by lab records?
-4. How will missing values enter site means and later models?
-5. If an outlier is retained, how will the decision be explained? Retention can be the correct choice.
-
-# 5. Apply the approved P450 rule (optional)
-
-The historical script converted nonpositive P450 to missing. This may be appropriate for an invalid assay result, but **zero by itself does not prove invalidity**. If confirmed and approved, change the switch in Section 1; the code will document which values were altered.
 
 ```{r}
 #| label: p450-decision
@@ -127,9 +121,7 @@ if (replace_nonpositive_p450_with_na) {
 }
 ```
 
-# 6. Apply the approved SOD rule (optional)
-
-Do not run a replacement until the replacement value and its analytical basis are verified. A threshold expressed in concentration units may not be directly applicable to the *protein-normalized activity result* without knowing the assay calculation and definitions. The following guard prevents an unverified missing replacement value.
+# Apply the approved SOD rule (optional)
 
 ```{r}
 #| label: sod-decision
@@ -155,7 +147,7 @@ If a bench record proves that **one sample × metric** value was transcribed inc
 #                          VERIFIED_SHELL_VALUE, shell))
 ```
 
-# 8. Check the outcome of cleaning
+# Check the outcome of cleaning
 
 Compare **counts and original-versus-resulting values**, not merely the appearance of a plot. An altered, excluded, or retained observation must be traceable to a documented rule.
 
@@ -192,7 +184,7 @@ comparison <- bind_rows(
 comparison
 ```
 
-## 8.1 Keep sample and site identifiers intact
+## Keep sample and site identifiers intact
 
 ```{r}
 #| label: final-identity-check
@@ -202,7 +194,7 @@ stopifnot(identical(clean_data$site_number, raw_data$site_number))
 stopifnot(!anyDuplicated(clean_data$sample_id))
 ```
 
-# 9. Create a descriptive site-level data table
+# Create a descriptive site-level data table
 
 The old cleaning file averaged measurements at each site. Preserve this as a **separate derived table**, not a replacement for the sample-level file. Missing values are omitted *for each mean only*. When every value of a metric is missing at a site, the result should be `NA`, not `NaN`. The explicitly named fields make the operation transparent for beginning students.
 

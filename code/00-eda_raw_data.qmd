@@ -29,17 +29,17 @@ editor: source
 #| label: setup
 library(tidyverse)
 
-input_file <- "../data/raw/03-all_metrics_sample-level.csv"
-run_label <- "pre_cleaning"
+input_file <- "../data/cleaned/04-all_metrics_sample-level_CLEANED.csv"
+run_label <- "cleaned"
 
 # AFTER cleaning, change ONLY these two settings:
 # input_file <- "04-all_metrics_sample-level_CLEANED.csv"
 # run_label <- "post_cleaning"
 
 stopifnot(file.exists(input_file))
-output_dir <- file.path("../output/raw_eda", run_label)
+output_dir <- file.path("../output/cleaned_eda", run_label)
 dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
-figures_dir <- file.path(output_dir, "../output/raw_eda_figures")
+figures_dir <- file.path(output_dir, "../output/cleaned_eda_figures")
 dir.create(figures_dir, showWarnings = FALSE, recursive = TRUE)
 
 
