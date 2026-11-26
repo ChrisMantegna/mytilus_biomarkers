@@ -1,0 +1,440 @@
+---
+title: "Outlier Identification and Transformation"
+author: "CM"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: false
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+---
+
+## Preparation
+
+
+```{r}
+library(tidyverse)
+library(knitr)
+
+input_file <- "../data/cleaned/04-all_metrics_sample-level_CLEANED.csv"
+
+# EDIT: These are the exact column names expected in your CSV.
+id_col <- "sample_id"
+site_col <- "site_number"
+metric_cols <- c("p450", "sod", "condition_index", "shell")
+
+# Outputs will be written alongside this Quarto document.
+output_dir <- "../data/adjusted"
+#dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+### Load data
+
+```{r}
+if (file.exists(input_file)) {
+  biomarker_raw <- read_csv(input_file, show_col_types = FALSE)
+  data_origin <- "USER CSV"
+} else {
+  set.seed(2026)
+  biomarker_raw <- tibble(
+    sample_id = sprintf("DEMO_%03d", 1:80),
+    site_number = rep(1:20, each = 4),
+    p450 = rlnorm(80, meanlog = 0.1, sdlog = 0.6),
+    sod = rlnorm(80, meanlog = 2.0, sdlog = 0.45),
+    condition_index = rnorm(80, mean = 9, sd = 1.2),
+    shell = rnorm(80, mean = 1.8, sd = 0.25)
+  )
+  biomarker_raw$p450[c(7, 44)] <- c(16, 0.02)
+  biomarker_raw$sod[30] <- 65
+  biomarker_raw$condition_index[61] <- 16
+  biomarker_raw$shell[12] <- 3.2
+  biomarker_raw$p450[18] <- NA_real_
+  data_origin <- "SYNTHETIC DEMONSTRATION — NOT RESEARCH DATA"
+}
+
+cat("Data source:", data_origin, "\n")
+
+required_cols <- c(id_col, site_col, metric_cols)
+missing_cols <- setdiff(required_cols, names(biomarker_raw))
+if (length(missing_cols) > 0) {
+  stop("Missing expected columns: ", paste(missing_cols, collapse = ", "),
+       ". Edit the configuration in Section 1.")
+}
+
+# Confirm an unambiguous sample identifier before inspecting outliers.
+if (anyNA(biomarker_raw[[id_col]]) || anyDuplicated(biomarker_raw[[id_col]]) > 0) {
+  stop("Sample IDs must be non-missing and unique. Check whether you need a composite ID.")
+}
+
+if (!all(vapply(biomarker_raw[metric_cols], is.numeric, logical(1)))) {
+  stop("All selected measurement columns must be numeric. Check import and units.")
+}
+
+biomarker_long <- biomarker_raw %>%
+  rename(sample_id_work = all_of(id_col), site_work = all_of(site_col)) %>%
+  mutate(sample_id_work = as.character(sample_id_work),
+         site_work = as.character(site_work)) %>%
+  select(sample_id_work, site_work, all_of(metric_cols)) %>%
+  pivot_longer(cols = all_of(metric_cols), names_to = "metric", values_to = "value")
+
+kable(biomarker_long %>% count(metric, name = "n_records"))
+```
+
+## Audit values (before calling anything an outlier)
+
+```{r}
+value_audit <- biomarker_long %>%
+  group_by(metric) %>%
+  summarise(
+    n_total = n(),
+    n_missing = sum(is.na(value)),
+    n_nonfinite = sum(!is.finite(value) & !is.na(value)),
+    n_zero = sum(value == 0, na.rm = TRUE),
+    n_negative = sum(value < 0, na.rm = TRUE),
+    min = if (all(is.na(value))) NA_real_ else min(value, na.rm = TRUE),
+    max = if (all(is.na(value))) NA_real_ else max(value, na.rm = TRUE),
+    .groups = "drop"
+  )
+kable(value_audit, digits = 3)
+```
+
+## Inspect original distributions
+
+```{r}
+biomarker_long %>%
+  filter(is.finite(value)) %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 18, fill = "steelblue", color = "white") +
+  facet_wrap(~ metric, scales = "free") +
+  labs(title = "Untransformed distributions", x = "Measurement", y = "Number of samples") +
+  theme_minimal()
+```
+
+```{r}
+biomarker_long %>%
+  filter(is.finite(value)) %>%
+  ggplot(aes(y = value, x = metric)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.12, alpha = 0.6) +
+  facet_wrap(~ metric, scales = "free_y") +
+  labs(title = "Individual measurements alongside boxplots", x = NULL, y = "Measurement") +
+  theme_minimal()
+```
+
+
+## Flag potential outliers, per metric
+
+We calculate two complementary descriptive rules over **all samples for each metric**:
+
+- **Tukey IQR fences:** below Q1 − 1.5 × IQR or above Q3 + 1.5 × IQR.
+- **Modified z-score:** 0.6745 × (value − median) / MAD (where MAD is the median *unscaled* absolute deviation); flag absolute scores greater than 3.5.
+
+These are *screening conventions*, not hypothesis tests and not automatic deletion criteria. If the MAD is zero, its score is undefined and is left missing. A metric may be flagged by one rule and not another.
+
+```{r}
+metric_reference <- biomarker_long %>%
+  filter(is.finite(value)) %>%
+  group_by(metric) %>%
+  summarise(
+    n_valid = n(),
+    q1 = quantile(value, 0.25, names = FALSE),
+    q3 = quantile(value, 0.75, names = FALSE),
+    median_value = median(value),
+    mad_raw = median(abs(value - median(value))),
+    .groups = "drop"
+  ) %>%
+  mutate(iqr = q3 - q1,
+         lower_fence = q1 - 1.5 * iqr,
+         upper_fence = q3 + 1.5 * iqr)
+
+outlier_audit <- biomarker_long %>%
+  left_join(metric_reference, by = "metric") %>%
+  mutate(
+    flag_iqr = if_else(is.finite(value),
+                       value < lower_fence | value > upper_fence,
+                       FALSE),
+    modified_z = if_else(is.finite(value) & !is.na(mad_raw) & mad_raw > 0,
+                         0.6745 * (value - median_value) / mad_raw,
+                         NA_real_),
+    flag_mad = coalesce(abs(modified_z) > 3.5, FALSE),
+    flag_any = flag_iqr | flag_mad,
+    review_status = if_else(flag_any, "Needs investigation", "Not flagged"),
+    # Flag-based exclusion below is a SENSITIVITY SCENARIO, not a QC decision.
+    sensitivity_exclude = flag_any
+  )
+
+kable(metric_reference, digits = 3)
+```
+
+### Locate the specific sample and metric
+
+```{r}
+flagged_samples <- outlier_audit %>%
+  filter(flag_any) %>%
+  arrange(metric, desc(abs(modified_z))) %>%
+  select(sample_id_work, site_work, metric, value,
+         lower_fence, upper_fence, modified_z,
+         flag_iqr, flag_mad, review_status)
+
+kable(flagged_samples, digits = 3,
+      caption = "Every flagged observation, linked to its sample ID and metric")
+
+write_csv(flagged_samples, file.path(output_dir, "flagged_samples_review.csv"))
+write_csv(outlier_audit, file.path(output_dir, "all_measurements_with_flags.csv"))
+```
+
+**Review questions:** Do both rules identify the same samples? Does one sample have several flagged metrics? Could the result reflect a transcription error, technical artifact, or biologically meaningful extreme? What evidence would you need before excluding it?
+
+### Why not automatically calculate outlier thresholds within each site?
+
+The mussel study has only a few individuals per site. With roughly 4–6 mussels at a site, site-level quartiles and MAD estimates are unstable. Start with **metric-wide** flags, then inspect site context. Site-level flagging can be revisited when group sizes and the scientific question justify it.
+
+```{r}
+plot_outliers<- outlier_audit %>%
+  filter(is.finite(value)) %>%
+ ggplot(aes(x = site_work, y = value, color = flag_any)) +
+  geom_point(position = position_jitter(width = 0.15, height = 0), size = 1.8) +
+  facet_wrap(~ metric, scales = "free_y") +
+  scale_color_manual(values = c(`FALSE` = "gray50", `TRUE` = "firebrick")) +
+  labs(title = "Flagged measurements in site context", x = "Site number",
+       y = "Measurement", color = "Flagged") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+figures_dir <- file.path(output_dir, "output")
+ggsave(file.path(figures_dir, "outlier_audit.png"),
+       plot = plot_outliers, width = 12, height = 10, dpi = 300)
+```
+
+## Compare two retention scenarios
+
+Both scenarios below retain the original untouched values in the audit:
+
+- **All observations:** every finite measurement, including flagged values.
+- **Flags excluded (sensitivity only):** finite measurements except those flagged for that **specific metric**.
+
+**A sample flagged on P450 is still retained for SOD and shell unless those measurements are independently flagged.** This prevents accidental removal of complete mussels from the entire data set.
+
+```{r}
+scenario_data <- bind_rows(
+  outlier_audit %>%
+    filter(is.finite(value)) %>%
+    mutate(scenario = "All observations"),
+  outlier_audit %>%
+    filter(is.finite(value), !sensitivity_exclude) %>%
+    mutate(scenario = "Flags excluded (sensitivity only)")
+)
+
+scenario_counts <- scenario_data %>%
+  count(metric, scenario, name = "n_included")
+kable(scenario_counts)
+```
+
+## Apply fixed transformations
+
+We show **raw**, **signed cube root** (valid for negative, zero, or positive numbers), **square root** (nonnegative only), **log1p** = log(1 + x) (x > −1), and **asinh** (all real numbers). The last is especially useful for teaching transformations that accept zero and negative values. These are examples, not a prescribed choice for every biomarker.
+
+We apply the **same mathematical definition** to retained and excluded scenarios so comparisons are meaningful. Unlike a fitted Box–Cox or Tukey transformation, none of the formulas below is tuned separately to each scenario.
+
+```{r}
+transformed_data <- scenario_data %>%
+  mutate(
+    raw = value,
+    signed_cuberoot = sign(value) * abs(value)^(1/3),
+    square_root = if_else(value >= 0, sqrt(pmax(value, 0)), NA_real_),
+    log1p_value = if_else(value > -1, log1p(value), NA_real_),
+    asinh_value = asinh(value)
+  ) %>%
+  select(sample_id_work, site_work, metric, scenario,
+         flag_any, raw, signed_cuberoot, square_root,
+         log1p_value, asinh_value) %>%
+  pivot_longer(cols = c(raw, signed_cuberoot, square_root,
+                        log1p_value, asinh_value),
+               names_to = "transformation", values_to = "transformed_value")
+
+transformation_availability <- transformed_data %>%
+  group_by(metric, scenario, transformation) %>%
+  summarise(n_finite = sum(is.finite(transformed_value)),
+            n_undefined = sum(!is.finite(transformed_value)),
+            .groups = "drop")
+kable(transformation_availability)
+```
+
+**Caution on logs:** `log1p(x)` is a mathematically defined demonstration, not a universally justified biological offset. Its interpretation depends on the units and measurement scale. For conventional `log(x)`, strictly positive values are required. Never silently replace zero with an arbitrary tiny number without explaining and defending the choice.
+
+### View histogram and Q–Q plot comparisons
+
+```{r}
+#| label: transformation-histograms
+#| fig-width: 12
+#| fig-height: 6
+#| warning: false
+#| message: false
+
+# Ensure the figures directory exists
+dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Retain only finite transformed values
+hist_data <- transformed_data %>%
+  filter(!is.na(metric),
+         is.finite(transformed_value))
+
+# Identify all available metrics
+metric_list <- unique(hist_data$metric)
+
+# Generate individual distribution plots by metric
+for (m in metric_list) {
+
+  # Subset data for the current metric
+  metric_data <- hist_data %>%
+    filter(metric == m)
+
+  # Generate faceted histograms
+  plot_transformedhist <- metric_data %>%
+    ggplot(aes(x = transformed_value)) +
+    geom_histogram(
+      bins = 18,
+      fill = "steelblue",
+      color = "white"
+    ) +
+    facet_wrap(
+      vars(scenario, transformation),
+      scales = "free",
+      ncol = n_distinct(metric_data$transformation)
+    ) +
+    labs(
+      title = paste("Distribution assessment:", m),
+      subtitle = "Original versus transformed distributions, with and without flags",
+      x = "Value on indicated scale",
+      y = "Count"
+    ) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 9, face = "bold"),
+      plot.title = element_text(face = "bold"),
+      plot.subtitle = element_text(size = 10),
+      panel.spacing = grid::unit(1, "lines")
+    )
+
+  # Save individual figure to the figures directory
+  ggsave(
+    filename = file.path(
+      figures_dir,
+      paste0("transformations_hist_", m, ".png")
+    ),
+    plot = plot_transformedhist,
+    width = 12,
+    height = 6,
+    units = "in",
+    dpi = 300
+  )
+
+  # Display figure in the rendered report
+  print(plot_transformedhist)
+}
+```
+
+```{r}
+# Ensure figures directory exists
+#dir.create(figures_dir, recursive = TRUE, showWarnings = FALSE)
+
+# Identify all available metrics
+metric_list <- unique(na.omit(transformed_data$metric))
+
+# Generate individual Q-Q plots by metric
+for (m in metric_list) {
+
+  plot_transformedqq <- transformed_data %>%
+    filter(metric == m,
+           is.finite(transformed_value)) %>%
+    ggplot(aes(sample = transformed_value)) +
+    stat_qq(size = 1.5, alpha = 0.6, color = "steelblue") +
+    stat_qq_line(color = "firebrick", linewidth = 0.7) +
+    facet_wrap(
+      vars(scenario, transformation),
+      scales = "free",
+      nrow = length(unique(na.omit(transformed_data$scenario)))
+    ) +
+    labs(
+      title = paste("Transformation assessment:", m),
+      subtitle = "Q-Q plots with and without flagged observations",
+      x = "Theoretical quantiles",
+      y = "Sample quantiles"
+    ) +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 9, face = "bold"),
+      plot.title = element_text(face = "bold"),
+      panel.spacing = grid::unit(1, "lines")
+    )
+
+  # Save individual figure
+  ggsave(
+    filename = file.path(
+      figures_dir,
+      paste0("transformations_qq_", m, ".png")
+    ),
+    plot = plot_transformedqq,
+    width = 12,
+    height = 6,
+    dpi = 300
+  )
+
+  # Display figure in rendered report
+  print(plot_transformedqq)
+}
+```
+
+### Compare descriptive summaries
+
+A transformation changes scale, so means and standard deviations on different transformed scales are **not directly comparable** in magnitude. Here we report n, median, IQR, and the sample skewness coefficient as descriptive aids, not as a decision rule.
+
+```{r}
+transformation_summary <- transformed_data %>%
+  filter(is.finite(transformed_value)) %>%
+  group_by(metric, scenario, transformation) %>%
+  summarise(
+    n = n(),
+    mean = mean(transformed_value),
+    sd = sd(transformed_value),
+    median = median(transformed_value),
+    iqr = IQR(transformed_value),
+    skewness = if (n() >= 3 && sd(transformed_value) > 0)
+      mean((transformed_value - mean(transformed_value))^3) /
+      sd(transformed_value)^3 else NA_real_,
+    .groups = "drop"
+  )
+kable(transformation_summary, digits = 3)
+write_csv(transformation_summary,
+          file.path(output_dir, "transformation_comparison_summary.csv"))
+```
+
+## 7. Create a decision log (do not remove records automatically)
+
+The flagged observations have **not** been declared invalid. This review template is where a student documents independent evidence about an observation before exclusion from any primary analysis.
+
+```{r}
+decision_log <- flagged_samples %>%
+  transmute(
+    sample_id = sample_id_work,
+    site_number = site_work,
+    metric, observed_value = value,
+    iqr_flag = flag_iqr,
+    mad_flag = flag_mad,
+    check_raw_file = "",
+    check_protocol_or_instrument = "",
+    check_site_and_biology = "",
+    decision = "PENDING REVIEW",
+    rationale = "",
+    reviewer = "",
+    review_date = ""
+  )
+write_csv(decision_log, file.path(output_dir, "outlier_decision_log_template.csv"))
+kable(head(decision_log, 10), caption = "First ten rows of the review template")
+```
+
+
+
